@@ -242,9 +242,32 @@ async def run_checks(tmpdir: Path) -> None:
           len(placed) == 1 and placed[0].group.name == "Saved",
           f"got {[(e.title, e.group.name) for e in placed]}")
 
-    print("\nLocked safe")
-    manager.props.locked = True
+    print("\nLocking through the backend")
+    check("safe starts unlocked", manager.props.locked is False)
+    await backend.lock()
+    check("lock() sets the property the application's own lock action sets",
+          manager.props.locked is True)
     check("a locked safe reports no database", backend.get_database() is None)
+
+    await backend.lock()
+    check("locking an already locked safe does not raise", manager.props.locked is True)
+
+    print("\nWrites are refused once locked")
+    for description, call in (
+        ("set_login", backend.set_login(
+            url="https://after.example", login="x", password="y",
+            title="after.example")),
+        ("create_group", backend.create_group("AfterLock")),
+    ):
+        try:
+            await call
+            check(f"{description} is refused while locked", False, "no exception")
+        except RuntimeError:
+            check(f"{description} is refused while locked", True)
+
+    check("nothing was written while locked", not any(
+        e.username == "x" for e in manager.db.entries
+    ) and not any(g.name == "AfterLock" for g in manager.db.groups))
 
 
 def main() -> int:

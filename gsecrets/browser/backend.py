@@ -213,6 +213,21 @@ class ApplicationBackend:
 
         return group.props.name, group.uuid.hex
 
+    async def lock(self) -> None:
+        """Lock the safe, as UnlockedDatabase.lock_safe() does.
+
+        Setting the property is the whole of it; the application's own lock
+        action does no more, and everything else -- clearing the view, the
+        automatic save loop -- hangs off notify::locked.
+        """
+        database_manager = self._database_manager()
+        if database_manager is None:
+            # Already locked, or nothing open. Nothing to do, and not an error:
+            # the caller wanted the safe locked and it is.
+            return
+
+        database_manager.props.locked = True
+
     # -- persistence -----------------------------------------------------
 
     async def save(self) -> None:

@@ -70,9 +70,10 @@ class DevBackend:
     def __init__(self, db: PyKeePass, auto_approve: bool = False) -> None:
         self._db = db
         self._auto_approve = auto_approve
+        self._locked = False
 
-    def get_database(self) -> PyKeePass:
-        return self._db
+    def get_database(self) -> PyKeePass | None:
+        return None if self._locked else self._db
 
     async def confirm_association(self, key_id: str) -> str | None:
         print("\n--- association request ---")
@@ -146,6 +147,10 @@ class DevBackend:
             group = existing if existing is not None else self._db.add_group(group, part)
 
         return group.name, group.uuid.hex
+
+    async def lock(self) -> None:
+        self._locked = True
+        print("  safe locked; further requests will be refused")
 
 
 

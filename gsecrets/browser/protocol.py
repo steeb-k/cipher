@@ -74,6 +74,9 @@ class Backend(Protocol):
         set_login.
         """
 
+    async def lock(self) -> None:
+        """Lock the safe. Must be harmless when it is already locked."""
+
 
 class RequestHandler:
     """Handles decrypted requests for a single client connection."""
@@ -458,9 +461,21 @@ class RequestHandler:
     async def _lock_database(
         self, _payload: dict[str, Any], _client_id: str
     ) -> dict[str, Any]:
-        raise ProtocolError(
-            errors.INCORRECT_ACTION, "lock-database is not implemented yet"
-        )
+        # Deliberately not gated on a verified association, unlike every other
+        # action here. The request carries no proof and the extension sends
+        # none, because keepass.lockDatabase() does not call testAssociation()
+        # first, so requiring one would break the lock button in its popup.
+        # Locking is also the one operation that only ever reduces access: an
+        # unauthenticated caller can be a nuisance but can never learn anything.
+        await self._backend.lock()
+        logging.info("Browser locked the safe")
+
+        # The protocol reports success here as a failure, and that is correct
+        # rather than odd: the safe is locked by the time this returns, so
+        # "database not opened" is the truthful answer. The extension relies on
+        # it, using the error branch of lockDatabase() to mark its own state
+        # closed.
+        raise ProtocolError(errors.DATABASE_NOT_OPENED, "Database not opened")
 
     _HANDLERS = {
         "get-databasehash": _get_databasehash,

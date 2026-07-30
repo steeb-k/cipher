@@ -74,6 +74,7 @@ class FakeBackend:
         self.association_name = "cipher-bridge-test"
         self.approve = True
         self.saved = 0
+        self.locked = False
 
     def get_database(self):
         return self.db
@@ -127,6 +128,11 @@ class FakeBackend:
             group = existing if existing is not None else self.db.add_group(group, part)
 
         return group.name, group.uuid.hex
+
+    async def lock(self) -> None:
+        """Locking is modelled as the database becoming unavailable."""
+        self.db = None
+        self.locked = True
 
 
 class Client:
@@ -609,6 +615,31 @@ async def run_checks(tmpdir: Path) -> None:
     print("\nMalformed input")
     response = await client.send("no-such-action", {"action": "no-such-action"})
     check("unknown action is rejected", response.get("errorCode") == 12, f"got {response}")
+
+    # Last, because it makes everything above unavailable.
+    print("\nLocking")
+    response = await client.send("lock-database", {"action": "lock-database"})
+    check(
+        "lock-database reports success as DATABASE_NOT_OPENED, as the protocol requires",
+        response.get("errorCode") == 1,
+        f"got {response}",
+    )
+    check("the backend was actually asked to lock", backend.locked is True)
+
+    response = await client.send("get-databasehash", {"action": "get-databasehash"})
+    check(
+        "the safe really is locked afterwards",
+        response.get("errorCode") == 1,
+        f"got {response}",
+    )
+
+    # Nothing to verify against once locked, so this must not raise either.
+    response = await client.send("lock-database", {"action": "lock-database"})
+    check(
+        "locking an already locked safe is harmless",
+        response.get("errorCode") == 1,
+        f"got {response}",
+    )
 
     writer.close()
     await server.stop()
