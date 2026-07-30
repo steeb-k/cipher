@@ -17,6 +17,28 @@
                 <property name="use-underline">True</property>
               </object>
             </child>
+            <child>
+              <object class="AdwSwitchRow">
+                <property name="title" translatable="yes">_Run in the Background</property>
+                <property name="subtitle" translatable="yes">Closing the window hides it instead of quitting. The safe keeps its state and still locks on schedule.</property>
+                <property name="action-name">settings.run-in-background</property>
+                <property name="use-underline">True</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup" id="section_browser">
+            <property name="title" translatable="yes">Browser Integration</property>
+            <property name="description" translatable="yes">Lets a browser extension request credentials. Each browser must be granted access separately the first time it asks.</property>
+            <child>
+              <object class="AdwSwitchRow">
+                <property name="title" translatable="yes">_Enable Browser Integration</property>
+                <property name="subtitle" translatable="yes">Listen for requests from a browser extension.</property>
+                <property name="action-name">settings.browser-integration</property>
+                <property name="use-underline">True</property>
+              </object>
+            </child>
           </object>
         </child>
         <child>

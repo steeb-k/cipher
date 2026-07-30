@@ -203,7 +203,9 @@ class Application(Adw.Application):
 
     def on_quit_action(self, _action: Gio.Action, _param: GLib.Variant) -> None:
         for window in self.get_windows():
-            window.close()
+            # Not close(): with running in the background enabled that would be
+            # taken as a request to hide, leaving no way to quit.
+            window.close_for_quit()
 
     def on_new_window_action(self, _action: Gio.Action, _param: GLib.Variant) -> None:
         window = self.new_window()

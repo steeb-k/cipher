@@ -37,6 +37,12 @@ class SettingsDialog(Adw.PreferencesDialog):
         first_start_action = settings.create_action("first-start-screen")
         action_group.add_action(first_start_action)
 
+        browser_integration_action = settings.create_action("browser-integration")
+        action_group.add_action(browser_integration_action)
+
+        run_in_background_action = settings.create_action("run-in-background")
+        action_group.add_action(run_in_background_action)
+
         # Safe
         save_automatically_action = settings.create_action("save-automatically")
         action_group.add_action(save_automatically_action)

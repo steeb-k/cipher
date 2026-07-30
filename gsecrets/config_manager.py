@@ -33,6 +33,7 @@ GENERATOR_SEPARATOR = "generator-separator"
 LOCK_ON_SESSION_LOCK = "lock-on-session-lock"
 FINGERPRINT_QUICK_UNLOCK = "fingerprint-quick-unlock"
 BROWSER_INTEGRATION = "browser-integration"
+RUN_IN_BACKGROUND = "run-in-background"
 QUICK_UNLOCK = "quick-unlock"
 
 
@@ -216,6 +217,14 @@ def get_browser_integration() -> bool:
 
 def set_browser_integration(value: bool) -> None:
     setting.set_boolean(BROWSER_INTEGRATION, value)
+
+
+def get_run_in_background() -> bool:
+    return setting.get_boolean(RUN_IN_BACKGROUND)
+
+
+def set_run_in_background(value: bool) -> None:
+    setting.set_boolean(RUN_IN_BACKGROUND, value)
 
 
 def get_quick_unlock():

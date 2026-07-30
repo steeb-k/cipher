@@ -34,6 +34,9 @@ class Window(Adw.ApplicationWindow):
 
     _create_view = None
     unlocked_db = None
+    # Set while a deliberate quit is under way, so do_close_request() does not
+    # reinterpret it as a request to hide to the background.
+    _quitting = False
 
     _create_database_bin = Gtk.Template.Child()
     _main_view = Gtk.Template.Child()
@@ -353,6 +356,17 @@ class Window(Adw.ApplicationWindow):
         logging.debug("Saving window geometry: (%s, %s)", width, height)
         gsecrets.config_manager.set_window_size([width, height])
 
+    def close_for_quit(self) -> None:
+        """Close for real, even when running in the background is enabled.
+
+        Every deliberate quit has to come through here or force_close(). Both set
+        the flag do_close_request() checks, because otherwise it would treat an
+        explicit quit as a request to hide and there would be no way to exit at
+        all with the setting on.
+        """
+        self._quitting = True
+        self.close()
+
     def force_close(self):
         """Method to close a window with unsaved changes.
 
@@ -361,6 +375,7 @@ class Window(Adw.ApplicationWindow):
         if unlocked_db := self.unlocked_db:
             unlocked_db.database_manager.is_dirty = False
 
+        self._quitting = True
         self.close()
 
     def do_close_request(self) -> bool:  # pylint: disable=arguments-differ
@@ -371,6 +386,24 @@ class Window(Adw.ApplicationWindow):
 
         Return: True to stop other handlers from being invoked for the signal.
         """
+        if not self._quitting and gsecrets.config_manager.get_run_in_background():
+            # Hide rather than close, so a browser extension keeps being served.
+            #
+            # Checked before the save handling below because none of it applies:
+            # the process is not going away, so there is nothing to rescue.
+            # Unsaved changes stay in memory and the automatic save loop keeps
+            # running, which is strictly safer than the quit path.
+            #
+            # Hiding is enough on its own. A hidden window is still registered
+            # with the application, so it does not quit, and GTK does not
+            # unrealize a window merely for being hidden -- if it did,
+            # do_unrealize() would run cleanup() and cancel the inactivity
+            # timer, which must keep running whether or not anything is visible.
+            self.save_window_size()
+            self.set_visible(False)
+            logging.debug("Window hidden; still running in the background")
+            return True
+
         if not self.unlocked_db:
             self.save_window_size()
             return False
