@@ -199,6 +199,49 @@ async def run_checks(tmpdir: Path) -> None:
         e.username == "a" for e in manager.db.entries
     ))
 
+    print("\nCreating groups")
+    manager.is_dirty = False
+    groups_before = manager.groups.get_n_items()
+    name, uuid = await backend.create_group("Browser")
+    check("returns the created name", name == "Browser")
+    check("returns a uuid", bool(uuid))
+    check("group exists in pykeepass", any(
+        g.name == "Browser" for g in manager.db.groups
+    ))
+    check(
+        "group also appears in the model store the UI reads",
+        manager.groups.get_n_items() == groups_before + 1,
+        f"{groups_before} -> {manager.groups.get_n_items()}",
+    )
+    check("creating a group marked the database dirty", manager.is_dirty is True)
+
+    same_name, same_uuid = await backend.create_group("Browser")
+    check("an existing group is reused, not duplicated",
+          same_uuid == uuid and len(
+              [g for g in manager.db.groups if g.name == "Browser"]
+          ) == 1,
+          f"got {same_name}/{same_uuid}")
+
+    deep_name, _ = await backend.create_group("Browser/Nested/Deeper")
+    check("a path creates the missing levels", deep_name == "Deeper")
+    check("intermediate levels were reused, not duplicated", len(
+        [g for g in manager.db.groups if g.name == "Browser"]
+    ) == 1)
+
+    print("\nSaving into a created group")
+    _, group_uuid = await backend.create_group("Saved")
+    await backend.set_login(
+        url="https://grouped.example/login",
+        login="grouped",
+        password="gpass",
+        title="grouped.example",
+        group_uuid=group_uuid,
+    )
+    placed = [e for e in manager.db.entries if e.username == "grouped"]
+    check("the entry landed in the requested group",
+          len(placed) == 1 and placed[0].group.name == "Saved",
+          f"got {[(e.title, e.group.name) for e in placed]}")
+
     print("\nLocked safe")
     manager.props.locked = True
     check("a locked safe reports no database", backend.get_database() is None)

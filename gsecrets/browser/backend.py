@@ -179,6 +179,40 @@ class ApplicationBackend:
         entry.props.url = url
         return True
 
+    async def create_group(self, path: str) -> tuple[str, str]:
+        """Create a group by name or slash-separated path.
+
+        Existing levels are reused rather than duplicated, so repeating a
+        request is harmless. Goes through SafeGroup.new_subgroup() for the same
+        reason set_login does: it registers the group with the model that drives
+        the UI and marks the safe dirty.
+        """
+        database_manager = self._database_manager()
+        if database_manager is None:
+            raise RuntimeError("no unlocked database available")
+
+        parts = [part for part in path.split("/") if part.strip()]
+        if not parts:
+            raise RuntimeError(f"no usable group name in {path!r}")
+
+        group = SafeGroup.get_root(database_manager)
+        for part in parts:
+            existing = next(
+                (
+                    child
+                    for child in group.group.subgroups
+                    if (child.name or "") == part
+                ),
+                None,
+            )
+            if existing is not None:
+                group = SafeGroup(database_manager, existing)
+                continue
+
+            group = group.new_subgroup(part)
+
+        return group.props.name, group.uuid.hex
+
     # -- persistence -----------------------------------------------------
 
     async def save(self) -> None:

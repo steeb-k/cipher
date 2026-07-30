@@ -113,6 +113,21 @@ class FakeBackend:
         self.db.add_entry(group, title, login, password, url=url)
         return True
 
+    async def create_group(self, path: str) -> tuple[str, str]:
+        """Create a group via pykeepass; the application uses the UI model."""
+        parts = [part for part in path.split("/") if part.strip()]
+        if not parts:
+            raise RuntimeError(f"no usable group name in {path!r}")
+
+        group = self.db.root_group
+        for part in parts:
+            existing = next(
+                (c for c in group.subgroups if (c.name or "") == part), None
+            )
+            group = existing if existing is not None else self.db.add_group(group, part)
+
+        return group.name, group.uuid.hex
+
 
 class Client:
     """The browser half of the protocol."""
@@ -201,6 +216,12 @@ def build_database(path: Path):
     broken = add(db.root_group, "BrokenTotp", "brokenuser", "brokenpass",
                  url="https://broken.example")
     broken.otp = "not!valid!base32"
+
+    # Nested groups, so the tree returned by get-database-groups has depth to
+    # check rather than a bare root.
+    work = db.add_group(db.root_group, "Work")
+    db.add_group(work, "Internal")
+    db.add_group(db.root_group, "Personal")
 
     db.save()
     return db
@@ -327,6 +348,79 @@ async def run_checks(tmpdir: Path) -> None:
         response.get("errorCode") == 10,
         f"got {response}",
     )
+
+    print("\nGroup tree")
+    response = await client.send(
+        "get-database-groups", {"action": "get-database-groups"}
+    )
+    # The extension reads response.groups.groups, not response.groups, so a flat
+    # array here would make it report an empty result and silently fall back.
+    outer = response.get("groups")
+    check(
+        "groups is nested the way the extension unwraps it",
+        isinstance(outer, dict) and isinstance(outer.get("groups"), list),
+        f"got {outer!r}",
+    )
+    tree = (outer or {}).get("groups") or []
+    check("exactly one root is returned", len(tree) == 1, f"got {len(tree)}")
+    root = tree[0] if tree else {}
+    check("root carries a name and uuid", bool(root.get("name")) and bool(root.get("uuid")))
+    names = sorted(c["name"] for c in root.get("children", []))
+    check("root's children are listed", names == ["Personal", "Work"], f"got {names}")
+    work = next((c for c in root.get("children", []) if c["name"] == "Work"), {})
+    check(
+        "nesting is recursive, not one level deep",
+        [c["name"] for c in work.get("children", [])] == ["Internal"],
+        f"got {work.get('children')}",
+    )
+
+    print("\nCreating groups")
+    response = await client.send("create-new-group", {
+        "action": "create-new-group", "groupName": "Browser",
+    })
+    check("create-new-group returns a name and uuid",
+          response.get("name") == "Browser" and bool(response.get("uuid")),
+          f"got {response}")
+    new_group_uuid = response.get("uuid")
+    check("the group exists in the database",
+          any(g.name == "Browser" for g in db.groups))
+
+    response = await client.send("create-new-group", {
+        "action": "create-new-group", "groupName": "Browser",
+    })
+    check(
+        "creating the same group again reuses it rather than duplicating",
+        response.get("uuid") == new_group_uuid
+        and len([g for g in db.groups if g.name == "Browser"]) == 1,
+        f"got {response}, {len([g for g in db.groups if g.name == 'Browser'])} groups",
+    )
+
+    response = await client.send("create-new-group", {
+        "action": "create-new-group", "groupName": "Work/Internal/Deep",
+    })
+    check("a path creates only the missing levels",
+          response.get("name") == "Deep"
+          and len([g for g in db.groups if g.name == "Internal"]) == 1,
+          f"got {response}")
+
+    response = await client.send("create-new-group", {
+        "action": "create-new-group", "groupName": "   ",
+    })
+    check("a blank group name is refused",
+          response.get("errorCode") == 17, f"got {response}")
+
+    print("\nSaving into a chosen group")
+    response = await client.send("set-login", {
+        "action": "set-login", "id": client.association_id,
+        "url": "https://grouped.example/login", "login": "grouped", "password": "gpass",
+        "group": "Browser", "groupUuid": new_group_uuid,
+    })
+    check("set-login into a group succeeds", response.get("success") == "true",
+          f"got {response}")
+    placed = [e for e in db.entries if e.username == "grouped"]
+    check("the entry landed in the requested group",
+          len(placed) == 1 and placed[0].group.name == "Browser",
+          f"got {[(e.title, e.group.name) for e in placed]}")
 
     print("\nOne-time passwords")
     response = await client.send("get-logins", {
@@ -480,6 +574,26 @@ async def run_checks(tmpdir: Path) -> None:
         response.get("errorCode") == 8,
         f"got {response}",
     )
+
+    response = await intruder.send(
+        "get-database-groups", {"action": "get-database-groups"}
+    )
+    check(
+        "an unverified client cannot enumerate groups",
+        response.get("errorCode") == 8,
+        f"got {response}",
+    )
+
+    response = await intruder.send("create-new-group", {
+        "action": "create-new-group", "groupName": "Intruder",
+    })
+    check(
+        "an unverified client cannot create groups",
+        response.get("errorCode") == 8,
+        f"got {response}",
+    )
+    check("no group was created by the unverified client",
+          not any(g.name == "Intruder" for g in db.groups))
     writer2.close()
 
     print("\nLocked database")

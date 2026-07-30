@@ -132,6 +132,22 @@ class DevBackend:
         print(f"  created entry {title!r} ({login}) for {url}")
         return True
 
+    async def create_group(self, path: str) -> tuple[str, str]:
+        """Create a group via pykeepass; the application uses the UI model."""
+        parts = [part for part in path.split("/") if part.strip()]
+        if not parts:
+            raise RuntimeError(f"no usable group name in {path!r}")
+
+        group = self._db.root_group
+        for part in parts:
+            existing = next(
+                (c for c in group.subgroups if (c.name or "") == part), None
+            )
+            group = existing if existing is not None else self._db.add_group(group, part)
+
+        return group.name, group.uuid.hex
+
+
 
 async def run(path: Path, password: str, auto_approve: bool) -> int:
     try:
@@ -146,7 +162,16 @@ async def run(path: Path, password: str, auto_approve: bool) -> int:
     try:
         await server.start()
     except RuntimeError as exc:
-        print(f"cannot start server: {exc}", file=sys.stderr)
+        # Almost always the application already holding the socket. Say so
+        # unmistakably: quietly talking to a different server than intended
+        # produces results that look like protocol bugs.
+        print(f"\nERROR: cannot start server: {exc}", file=sys.stderr)
+        print(
+            "Another server owns this socket. Quit the running Cipher (or dev "
+            "server) first;\nanything you test meanwhile reaches that one, not "
+            "this one.",
+            file=sys.stderr,
+        )
         return 1
 
     print(f"database : {path}")
@@ -178,6 +203,12 @@ def main() -> int:
     )
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
+
+    # Line-buffer stdout. Otherwise every status line below -- including the
+    # socket path and the association prompt -- is invisible whenever output is
+    # piped or captured, while logging still appears because it goes to stderr
+    # unbuffered. That made a failure to start easy to overlook.
+    sys.stdout.reconfigure(line_buffering=True)
 
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,

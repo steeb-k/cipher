@@ -66,6 +66,14 @@ class Backend(Protocol):
         stale until the safe is reopened.
         """
 
+    async def create_group(self, path: str) -> tuple[str, str]:
+        """Create a group, returning its name and hex UUID.
+
+        `path` may name a single group or a slash-separated path, in which case
+        every missing level is created. Backend-owned for the same reason as
+        set_login.
+        """
+
 
 class RequestHandler:
     """Handles decrypted requests for a single client connection."""
@@ -401,6 +409,52 @@ class RequestHandler:
 
         raise ProtocolError(errors.NO_VALID_UUID_PROVIDED, f"no entry with uuid {uuid}")
 
+    async def _get_database_groups(
+        self, _payload: dict[str, Any], client_id: str
+    ) -> dict[str, Any]:
+        db = self._database()
+        self._require_any_verified(client_id)
+
+        def describe(group) -> dict[str, Any]:
+            return {
+                "name": group.name or "",
+                "uuid": group.uuid.hex,
+                "children": [describe(child) for child in group.subgroups],
+            }
+
+        # Doubly nested on purpose. The published example shows groups as a flat
+        # array, but the extension assigns response.groups to a variable and
+        # then reads .groups off it (background/keepass.js, content/banner.js),
+        # so a flat array makes it log "Empty result from get_database_groups"
+        # and silently save to the default group instead.
+        #
+        # defaultGroup and defaultGroupAlwaysAllow are sent for conformance
+        # only: the extension overwrites both from its own settings.
+        return {
+            "groups": {"groups": [describe(db.root_group)]},
+            "defaultGroup": "",
+            "defaultGroupAlwaysAllow": False,
+        }
+
+    async def _create_new_group(
+        self, payload: dict[str, Any], client_id: str
+    ) -> dict[str, Any]:
+        self._database()
+        self._require_any_verified(client_id)
+
+        name = (payload.get("groupName") or "").strip()
+        if not name:
+            raise ProtocolError(
+                errors.CANNOT_CREATE_NEW_GROUP, "missing or empty groupName"
+            )
+
+        created_name, uuid = await self._backend.create_group(name)
+        await self._backend.save()
+
+        logging.info("Browser created group %s", name)
+
+        return {"name": created_name, "uuid": uuid}
+
     async def _lock_database(
         self, _payload: dict[str, Any], _client_id: str
     ) -> dict[str, Any]:
@@ -415,6 +469,8 @@ class RequestHandler:
         "get-logins": _get_logins,
         "set-login": _set_login,
         "get-totp": _get_totp,
+        "get-database-groups": _get_database_groups,
+        "create-new-group": _create_new_group,
         "lock-database": _lock_database,
     }
 
