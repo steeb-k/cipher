@@ -17,6 +17,8 @@ from gi.repository import Adw, Gio, Gtk
 from gsecrets.safe_element import SafeGroup
 
 if typing.TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pykeepass import PyKeePass
 
     from gsecrets.database_manager import DatabaseManager
@@ -28,7 +30,60 @@ class ApplicationBackend:
     def __init__(self, application: Gio.Application) -> None:
         self._application = application
 
+        # Called with "database-locked" or "database-unlocked" when the safe's
+        # state changes, so the server can tell connected browsers. Set by
+        # whoever owns the server, since the backend is built first.
+        self.on_state_change: Callable[[str], None] | None = None
+
+        # DatabaseManagers already being watched, by id(). A plain set would
+        # keep them alive, and identity is enough because the only question is
+        # whether notify::locked is already connected.
+        self._watched: set[int] = set()
+
     # -- database access -------------------------------------------------
+
+    def _iter_managers(self):
+        """Yield every DatabaseManager the open windows hold, locked or not."""
+        for window in self._application.get_windows():
+            unlocked_db = getattr(window, "unlocked_db", None)
+            if unlocked_db is None:
+                continue
+
+            database_manager = unlocked_db.database_manager
+            if database_manager is not None:
+                yield database_manager
+
+    def _watch_managers(self) -> None:
+        """Attach a lock-state listener to any manager not yet watched.
+
+        There is no signal for "a database appeared" -- window.unlocked_db is a
+        plain attribute, assigned in one place in unlock_database.py -- so this
+        is done opportunistically from _database_manager(), which runs on every
+        request. Managers are watched whether locked or not, so that a later
+        unlock is reported too.
+
+        The gap this leaves is the very first unlock, which happens before any
+        request could have discovered the manager. That is the least valuable
+        signal: the browser learns the safe is open from its own polling, and
+        nothing is waiting on it. Locking is the case that matters, and it is
+        covered, since a request always precedes it.
+        """
+        for database_manager in self._iter_managers():
+            key = id(database_manager)
+            if key in self._watched:
+                continue
+
+            self._watched.add(key)
+            database_manager.connect("notify::locked", self._on_locked_changed)
+
+    def _on_locked_changed(
+        self, database_manager: DatabaseManager, _pspec: object
+    ) -> None:
+        if self.on_state_change is None:
+            return
+
+        locked = database_manager.props.locked
+        self.on_state_change("database-locked" if locked else "database-unlocked")
 
     def _database_manager(self) -> DatabaseManager | None:
         """Find an unlocked database among the open windows.
@@ -38,16 +93,10 @@ class ApplicationBackend:
         request arriving from a browser must not be able to raise a password
         prompt, or a hostile local process could induce the user to unlock.
         """
-        for window in self._application.get_windows():
-            unlocked_db = getattr(window, "unlocked_db", None)
-            if unlocked_db is None:
-                continue
+        self._watch_managers()
 
-            database_manager = unlocked_db.database_manager
-            if database_manager is None or database_manager.props.locked:
-                continue
-
-            if database_manager.db is None:
+        for database_manager in self._iter_managers():
+            if database_manager.props.locked or database_manager.db is None:
                 continue
 
             return database_manager

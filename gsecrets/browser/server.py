@@ -49,6 +49,10 @@ class BrowserServer:
         self._backend = backend
         self._path = path or socket_path()
         self._server: asyncio.AbstractServer | None = None
+        # Live connections, so state changes can be pushed to them. Everything
+        # else in this protocol is request/response, where a reply goes back
+        # down the connection that asked; signals have no request to answer.
+        self._connections: set[asyncio.StreamWriter] = set()
 
     @property
     def path(self) -> Path:
@@ -134,6 +138,7 @@ class BrowserServer:
         decoder = json.JSONDecoder()
         buffer = ""
 
+        self._connections.add(writer)
         try:
             while True:
                 chunk = await reader.read(4096)
@@ -151,7 +156,38 @@ class BrowserServer:
         except Exception:
             logging.exception("Unhandled error on browser connection")
         finally:
+            self._connections.discard(writer)
             writer.close()
+
+    async def broadcast(self, action: str) -> int:
+        """Push an unsolicited signal to every connected client.
+
+        Signals are plaintext: the extension's onNativeMessage() dispatches on
+        response.action alone, before any decryption, and they carry no secret
+        beyond the fact that the state changed. That also avoids the question of
+        which client's session key to encrypt an unsolicited message with.
+
+        Best-effort by design. A client that has gone away must not stop the
+        others from being told, and cannot be allowed to propagate an error into
+        whatever changed the lock state.
+        """
+        if not self._connections:
+            return 0
+
+        payload = json.dumps({"action": action}).encode("utf-8")
+        delivered = 0
+
+        for writer in list(self._connections):
+            try:
+                writer.write(payload)
+                await writer.drain()
+                delivered += 1
+            except (ConnectionResetError, BrokenPipeError, OSError) as err:
+                logging.debug("Dropping browser connection during signal: %s", err)
+                self._connections.discard(writer)
+
+        logging.debug("Signalled %s to %s client(s)", action, delivered)
+        return delivered
 
     async def _drain_buffer(
         self,

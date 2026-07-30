@@ -71,6 +71,8 @@ class DevBackend:
         self._db = db
         self._auto_approve = auto_approve
         self._locked = False
+        # Set by run(); the application wires the equivalent in application.py.
+        self.on_state_change = None
 
     def get_database(self) -> PyKeePass | None:
         return None if self._locked else self._db
@@ -149,8 +151,16 @@ class DevBackend:
         return group.name, group.uuid.hex
 
     async def lock(self) -> None:
+        # Only signal on a real transition, mirroring notify::locked, which
+        # GObject emits only when the value changes.
+        if self._locked:
+            return
+
         self._locked = True
         print("  safe locked; further requests will be refused")
+
+        if self.on_state_change is not None:
+            await self.on_state_change("database-locked")
 
 
 
@@ -163,6 +173,7 @@ async def run(path: Path, password: str, auto_approve: bool) -> int:
 
     backend = DevBackend(db, auto_approve=auto_approve)
     server = BrowserServer(backend)
+    backend.on_state_change = server.broadcast
 
     try:
         await server.start()

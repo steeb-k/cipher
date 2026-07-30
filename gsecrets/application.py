@@ -91,7 +91,17 @@ class Application(Adw.Application):
         if self._browser_server is not None:
             return
 
-        server = BrowserServer(ApplicationBackend(self))
+        backend = ApplicationBackend(self)
+        server = BrowserServer(backend)
+
+        # Push lock-state changes to connected browsers. Without this, locking
+        # from Cipher's own UI goes unnoticed until the extension's next request
+        # fails. Scheduled as a task because the notification arrives from a
+        # GObject property change, which cannot await.
+        backend.on_state_change = lambda action: self.create_asyncio_task(
+            server.broadcast(action)
+        )
+
         try:
             await server.start()
         except (OSError, RuntimeError) as err:

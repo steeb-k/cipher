@@ -243,14 +243,41 @@ async def run_checks(tmpdir: Path) -> None:
           f"got {[(e.title, e.group.name) for e in placed]}")
 
     print("\nLocking through the backend")
+    signals: list[str] = []
+    backend.on_state_change = signals.append
+
+    # The listener attaches lazily, from _database_manager(); nothing has
+    # happened yet that would have discovered this manager.
+    backend.get_database()
+
     check("safe starts unlocked", manager.props.locked is False)
     await backend.lock()
     check("lock() sets the property the application's own lock action sets",
           manager.props.locked is True)
     check("a locked safe reports no database", backend.get_database() is None)
+    check("locking emitted database-locked",
+          signals == ["database-locked"], f"got {signals}")
 
     await backend.lock()
     check("locking an already locked safe does not raise", manager.props.locked is True)
+    check(
+        "a redundant lock emits no second signal, since notify::locked "
+        "only fires on a change",
+        signals == ["database-locked"],
+        f"got {signals}",
+    )
+
+    print("\nUnlocking is signalled")
+    # Locking is the only transition the protocol can cause; unlocking happens
+    # in the UI, so drive it the same way the application does.
+    manager.props.locked = False
+    check("unlocking emitted database-unlocked",
+          signals == ["database-locked", "database-unlocked"], f"got {signals}")
+    check("the database is available again", backend.get_database() is not None)
+
+    await backend.lock()
+    check("relocking signals again",
+          signals[-1] == "database-locked", f"got {signals}")
 
     print("\nWrites are refused once locked")
     for description, call in (

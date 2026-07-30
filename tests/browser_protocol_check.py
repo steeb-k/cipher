@@ -55,6 +55,9 @@ TOTP_SECRET = "JBSWY3DPEHPK3PXP"
 from gsecrets.browser import crypto, store  # noqa: E402
 from gsecrets.browser.server import BrowserServer  # noqa: E402
 
+# Unsolicited messages the server may push at any time.
+SIGNAL_ACTIONS = {"database-locked", "database-unlocked"}
+
 PASSED: list[str] = []
 FAILED: list[str] = []
 
@@ -75,6 +78,9 @@ class FakeBackend:
         self.approve = True
         self.saved = 0
         self.locked = False
+        # Awaited directly here. The application cannot: its notification comes
+        # from a GObject property change, so it schedules a task instead.
+        self.on_state_change = None
 
     def get_database(self):
         return self.db
@@ -130,9 +136,30 @@ class FakeBackend:
         return group.name, group.uuid.hex
 
     async def lock(self) -> None:
-        """Locking is modelled as the database becoming unavailable."""
+        """Locking is modelled as the database becoming unavailable.
+
+        Signals only on a real transition, mirroring notify::locked, which
+        GObject emits only when the value actually changes. The application gets
+        that for free; a fake has to be careful, and a spurious signal is not
+        harmless -- each one makes the extension re-query the database.
+        """
+        if self.locked:
+            return
+
         self.db = None
         self.locked = True
+        if self.on_state_change is not None:
+            await self.on_state_change("database-locked")
+
+    async def unlock(self, db) -> None:
+        """Only reachable from the checks; the protocol cannot unlock a safe."""
+        if not self.locked:
+            return
+
+        self.db = db
+        self.locked = False
+        if self.on_state_change is not None:
+            await self.on_state_change("database-unlocked")
 
 
 class Client:
@@ -145,12 +172,65 @@ class Client:
         self.box: Box | None = None
         self.id_key = crypto.b64encode(bytes(PrivateKey.generate().public_key))
         self.association_id: str | None = None
+        self._buffer = ""
+        self.signals: list[str] = []
+
+    async def _read_message(self) -> dict:
+        """Read one JSON object, buffering the way the proxy does.
+
+        Not a single read() per message: the server may coalesce a signal and a
+        reply into one write, and json.loads() on two concatenated objects
+        fails.
+        """
+        decoder = json.JSONDecoder()
+        while True:
+            stripped = self._buffer.lstrip()
+            self._buffer = stripped
+            if stripped:
+                try:
+                    obj, end = decoder.raw_decode(stripped)
+                except json.JSONDecodeError:
+                    pass  # incomplete; read more
+                else:
+                    self._buffer = stripped[end:]
+                    return obj
+
+            chunk = await asyncio.wait_for(self.reader.read(65536), timeout=5)
+            if not chunk:
+                raise ConnectionError("server closed the connection")
+            self._buffer += chunk.decode()
+
+    def _is_signal(self, message: dict) -> bool:
+        return (
+            message.get("action") in SIGNAL_ACTIONS
+            and "message" not in message
+            and "error" not in message
+        )
 
     async def _roundtrip(self, request: dict) -> dict:
         self.writer.write(json.dumps(request).encode())
         await self.writer.drain()
-        raw = await asyncio.wait_for(self.reader.read(65536), timeout=5)
-        return json.loads(raw.decode())
+
+        while True:
+            message = await self._read_message()
+            # Signals are unsolicited and may arrive before the reply to the
+            # request just sent. The extension routes them separately in
+            # onNativeMessage(), so a client must not mistake one for a reply.
+            if self._is_signal(message):
+                self.signals.append(message["action"])
+                continue
+            return message
+
+    async def wait_for_signal(self, timeout: float = 3.0) -> str | None:
+        """Wait for a signal without having sent anything."""
+        try:
+            while True:
+                message = await asyncio.wait_for(self._read_message(), timeout)
+                if self._is_signal(message):
+                    self.signals.append(message["action"])
+                    return message["action"]
+        except (TimeoutError, ConnectionError):
+            return None
 
     async def change_public_keys(self) -> tuple[dict, bytes]:
         """Run the key exchange, returning the response and expected nonce.
@@ -617,7 +697,15 @@ async def run_checks(tmpdir: Path) -> None:
     check("unknown action is rejected", response.get("errorCode") == 12, f"got {response}")
 
     # Last, because it makes everything above unavailable.
-    print("\nLocking")
+    print("\nLocking and signals")
+    # A second connection that never asks for anything, standing in for another
+    # browser: it must still be told the safe was locked.
+    reader3, writer3 = await asyncio.open_unix_connection(str(server.path))
+    observer = Client(reader3, writer3)
+    await observer.change_public_keys()
+
+    backend.on_state_change = server.broadcast
+
     response = await client.send("lock-database", {"action": "lock-database"})
     check(
         "lock-database reports success as DATABASE_NOT_OPENED, as the protocol requires",
@@ -639,6 +727,49 @@ async def run_checks(tmpdir: Path) -> None:
         "locking an already locked safe is harmless",
         response.get("errorCode") == 1,
         f"got {response}",
+    )
+
+    check(
+        "the client that locked was signalled",
+        "database-locked" in client.signals,
+        f"got {client.signals}",
+    )
+    check(
+        "a redundant lock does not signal twice",
+        client.signals.count("database-locked") == 1,
+        f"got {client.signals}",
+    )
+    observed = await observer.wait_for_signal()
+    check(
+        "a client that asked for nothing was signalled too",
+        observed == "database-locked",
+        f"got {observed!r}",
+    )
+
+    # The protocol has no unlock action; this exercises the push path for the
+    # transition the application reports when the user unlocks in the UI.
+    await backend.unlock(db)
+    unlocked = await observer.wait_for_signal()
+    check(
+        "unlocking is signalled as well",
+        unlocked == "database-unlocked",
+        f"got {unlocked!r}",
+    )
+
+    response = await observer.send("get-databasehash", {"action": "get-databasehash"})
+    check(
+        "the safe is usable again after the unlock signal",
+        bool(response.get("hash")),
+        f"got {response}",
+    )
+
+    writer3.close()
+    await asyncio.sleep(0.1)
+    delivered = await server.broadcast("database-locked")
+    check(
+        "a disconnected client is dropped rather than breaking the broadcast",
+        delivered <= 1,
+        f"delivered to {delivered} clients",
     )
 
     writer.close()
