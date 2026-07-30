@@ -12,6 +12,7 @@ from gsecrets import config_manager, const
 from gsecrets.browser.backend import ApplicationBackend
 from gsecrets.browser.server import BrowserServer
 from gsecrets.recent_manager import RecentManager
+from gsecrets.tray import TrayIcon
 from gsecrets.widgets.mod import load_widgets
 from gsecrets.widgets.window import Window
 
@@ -33,6 +34,7 @@ class Application(Adw.Application):
         asyncio.set_event_loop_policy(GLibEventLoopPolicy())
 
         self._browser_server: BrowserServer | None = None
+        self._tray_icon: TrayIcon | None = None
 
         # debug level logging option
         self.add_main_option(
@@ -66,7 +68,35 @@ class Application(Adw.Application):
         if config_manager.get_browser_integration():
             self.create_asyncio_task(self._start_browser_server())
 
+        # The tray icon follows run-in-background rather than having a setting
+        # of its own: its whole purpose is to bring back a hidden window, so it
+        # is meaningless when closing the window quits.
+        self.settings.connect(
+            f"changed::{config_manager.RUN_IN_BACKGROUND}",
+            self._on_run_in_background_changed,
+        )
+        self._update_tray_icon()
+
+    def _on_run_in_background_changed(
+        self, _settings: Gio.Settings, _key: str
+    ) -> None:
+        self._update_tray_icon()
+
+    def _update_tray_icon(self) -> None:
+        wanted = config_manager.get_run_in_background()
+        if wanted and self._tray_icon is None:
+            tray = TrayIcon(self)
+            if tray.start():
+                self._tray_icon = tray
+        elif not wanted and (tray := self._tray_icon):
+            self._tray_icon = None
+            tray.stop()
+
     def do_shutdown(self):  # pylint: disable=arguments-differ
+        if tray := self._tray_icon:
+            self._tray_icon = None
+            tray.stop()
+
         if server := self._browser_server:
             # Synchronous by necessity: an asyncio task scheduled here never
             # runs, because the event loop is already being torn down, and the
