@@ -13,6 +13,9 @@ if typing.TYPE_CHECKING:
     from collections.abc import Callable
 
 
+_MAX_ATTEMPTS = 10_000
+
+
 def _satisfies_requirements(
     password: str,
     use_uppercase: bool,
@@ -78,7 +81,21 @@ def generate(
             + string.punctuation
         )
 
-    while True:
+    # Bounded, because the requirements can be impossible to satisfy: asking for
+    # a one character password containing an uppercase letter, a lowercase
+    # letter, a digit and a symbol has no solution, and the length is settable
+    # down to 1. Retrying forever hangs the whole process, and the generator is
+    # reachable from the browser integration, so an unsatisfiable request must
+    # not be able to wedge the application.
+    #
+    # Satisfiable combinations converge in a handful of attempts -- even the
+    # tightest, four classes in four characters, lands about one time in
+    # fifteen -- so the cap never affects a request that has an answer. When it
+    # is reached, the password is still the requested length and drawn from the
+    # requested alphabet; it just may not contain one of every class, which is
+    # the only thing that could have been meant.
+    password = ""
+    for _ in range(_MAX_ATTEMPTS):
         password = "".join([secrets.choice(characters) for _ in range(length)])
         if _satisfies_requirements(
             password,
@@ -88,6 +105,8 @@ def generate(
             use_symbols,
         ):
             return password
+
+    return password
 
 
 def strength(password: str) -> int:
