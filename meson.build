@@ -8,8 +8,8 @@ i18n = import('i18n')
 python = import('python')
 gnome = import('gnome')
 
-project_id = 'org.gnome.World.Secrets'
-project_name = 'Secrets'
+project_id = 'io.github.steeb_k.Cipher'
+project_name = 'Cipher'
 
 message('Looking for dependencies')
 # We need pykeepass>=4.1.1 and pyotp>=2.4.0.
