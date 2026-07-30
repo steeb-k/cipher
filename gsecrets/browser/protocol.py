@@ -77,6 +77,14 @@ class Backend(Protocol):
     async def lock(self) -> None:
         """Lock the safe. Must be harmless when it is already locked."""
 
+    async def request_unlock(self) -> None:
+        """Bring up the window so the user can unlock.
+
+        Must not wait for the unlock: the request that prompted this is answered
+        immediately with DATABASE_NOT_OPENED, and the browser learns the safe is
+        open from the database-unlocked signal.
+        """
+
 
 class RequestHandler:
     """Handles decrypted requests for a single client connection."""
@@ -194,7 +202,19 @@ class RequestHandler:
                 errors.INCORRECT_ACTION, f"unsupported action: {action}"
             )
 
-        result = await handler(self, payload, client_id)
+        # triggerUnlock rides on the outer envelope in plaintext, not inside the
+        # encrypted payload; see buildRequest() in background/client.js. The
+        # extension sets it when the user has actively asked for credentials --
+        # clicking the field icon, or the save banner -- so a locked safe should
+        # bring up the window rather than silently refusing.
+        trigger_unlock = request.get("triggerUnlock") == "true"
+
+        try:
+            result = await handler(self, payload, client_id)
+        except ProtocolError as exc:
+            if trigger_unlock and exc.code == errors.DATABASE_NOT_OPENED:
+                await self._backend.request_unlock()
+            raise
 
         # Responses echo the request nonce incremented by one, both in the
         # envelope and inside the encrypted payload; the extension checks both.

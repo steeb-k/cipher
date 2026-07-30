@@ -81,9 +81,13 @@ class FakeBackend:
         # Awaited directly here. The application cannot: its notification comes
         # from a GObject property change, so it schedules a task instead.
         self.on_state_change = None
+        self.unlock_requests = 0
 
     def get_database(self):
         return self.db
+
+    async def request_unlock(self) -> None:
+        self.unlock_requests += 1
 
     async def confirm_association(self, key_id: str) -> str | None:
         return self.association_name if self.approve else None
@@ -252,18 +256,25 @@ class Client:
             )
         return response, crypto.increment_nonce(nonce)
 
-    async def send(self, action: str, payload: dict) -> dict:
+    async def send(
+        self, action: str, payload: dict, trigger_unlock: bool = False
+    ) -> dict:
         """Encrypt, send, and decrypt one action, verifying nonce handling."""
         assert self.box is not None, "handshake must run first"
 
         nonce = nacl_random(24)
         ciphertext = self.box.encrypt(json.dumps(payload).encode(), nonce).ciphertext
-        response = await self._roundtrip({
+        envelope = {
             "action": action,
             "message": crypto.b64encode(ciphertext),
             "nonce": crypto.b64encode(nonce),
             "clientID": self.client_id,
-        })
+        }
+        if trigger_unlock:
+            # On the outer envelope, in plaintext, as buildRequest() puts it.
+            envelope["triggerUnlock"] = "true"
+
+        response = await self._roundtrip(envelope)
 
         if "error" in response:
             return response
@@ -720,6 +731,26 @@ async def run_checks(tmpdir: Path) -> None:
         response.get("errorCode") == 1,
         f"got {response}",
     )
+    check(
+        "a plain request against a locked safe does not summon the window",
+        backend.unlock_requests == 0,
+        f"got {backend.unlock_requests}",
+    )
+
+    print("\nSummoning the unlock window")
+    response = await client.send(
+        "get-databasehash", {"action": "get-databasehash"}, trigger_unlock=True
+    )
+    check(
+        "triggerUnlock asks the application to bring up its window",
+        backend.unlock_requests == 1,
+        f"got {backend.unlock_requests}",
+    )
+    check(
+        "the request is still answered rather than waiting for the unlock",
+        response.get("errorCode") == 1,
+        f"got {response}",
+    )
 
     # Nothing to verify against once locked, so this must not raise either.
     response = await client.send("lock-database", {"action": "lock-database"})
@@ -761,6 +792,16 @@ async def run_checks(tmpdir: Path) -> None:
         "the safe is usable again after the unlock signal",
         bool(response.get("hash")),
         f"got {response}",
+    )
+
+    before = backend.unlock_requests
+    await observer.send(
+        "get-databasehash", {"action": "get-databasehash"}, trigger_unlock=True
+    )
+    check(
+        "triggerUnlock against an open safe summons nothing",
+        backend.unlock_requests == before,
+        f"got {backend.unlock_requests}, was {before}",
     )
 
     writer3.close()

@@ -77,6 +77,9 @@ class DevBackend:
     def get_database(self) -> PyKeePass | None:
         return None if self._locked else self._db
 
+    async def request_unlock(self) -> None:
+        print("  browser asked to unlock (the application would show its window)")
+
     async def confirm_association(self, key_id: str) -> str | None:
         print("\n--- association request ---")
         print(f"  client key: {key_id[:16]}...")

@@ -73,7 +73,10 @@ gi.require_version("Adw", "1")
 from gi.repository import GLib  # noqa: E402
 from pykeepass import PyKeePass, create_database  # noqa: E402
 
-from gsecrets.browser.backend import ApplicationBackend  # noqa: E402
+from gsecrets.browser.backend import (  # noqa: E402
+    UNLOCK_REQUEST_INTERVAL,
+    ApplicationBackend,
+)
 from gsecrets.database_manager import DatabaseManager  # noqa: E402
 
 PASSED: list[str] = []
@@ -87,8 +90,12 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 
 class StubWindow:
-    def __init__(self, unlocked_db) -> None:
+    def __init__(self, unlocked_db, presented=None) -> None:
         self.unlocked_db = unlocked_db
+        self._presented = presented if presented is not None else []
+
+    def present(self) -> None:
+        self._presented.append("present")
 
 
 class StubUnlockedDatabase:
@@ -101,12 +108,19 @@ class StubApplication:
 
     def __init__(self, windows) -> None:
         self._windows = windows
+        self.presented: list[str] = []
 
     def get_windows(self):
         return self._windows
 
     def get_active_window(self):
-        return self._windows[0] if self._windows else None
+        window = self._windows[0] if self._windows else None
+        if window is not None:
+            window._presented = self.presented  # noqa: SLF001
+        return window
+
+    def activate(self) -> None:
+        self.presented.append("activate")
 
 
 def store_items(store):
@@ -278,6 +292,25 @@ async def run_checks(tmpdir: Path) -> None:
     await backend.lock()
     check("relocking signals again",
           signals[-1] == "database-locked", f"got {signals}")
+
+    print("\nSummoning the unlock window")
+    presented = backend._application.presented  # noqa: SLF001
+    await backend.request_unlock()
+    check("request_unlock presents a window", presented == ["present"], f"got {presented}")
+
+    await backend.request_unlock()
+    check(
+        "a second request straight away is ignored, so it cannot be used to "
+        "flood the desktop",
+        presented == ["present"],
+        f"got {presented}",
+    )
+
+    # Reach past the interval rather than sleeping through it.
+    backend._last_unlock_request -= UNLOCK_REQUEST_INTERVAL + 1  # noqa: SLF001
+    await backend.request_unlock()
+    check("a request after the interval is honoured again",
+          presented == ["present", "present"], f"got {presented}")
 
     print("\nWrites are refused once locked")
     for description, call in (

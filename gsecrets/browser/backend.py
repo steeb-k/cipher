@@ -12,9 +12,13 @@ import logging
 import typing
 from gettext import gettext as _
 
-from gi.repository import Adw, Gio, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 from gsecrets.safe_element import SafeGroup
+
+# Shortest gap between honouring two unlock requests, in microseconds to match
+# GLib's monotonic clock.
+UNLOCK_REQUEST_INTERVAL = 3 * 1000 * 1000
 
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
@@ -39,6 +43,8 @@ class ApplicationBackend:
         # keep them alive, and identity is enough because the only question is
         # whether notify::locked is already connected.
         self._watched: set[int] = set()
+
+        self._last_unlock_request = 0
 
     # -- database access -------------------------------------------------
 
@@ -89,9 +95,8 @@ class ApplicationBackend:
         """Find an unlocked database among the open windows.
 
         Returns None when nothing is unlocked, which the protocol layer turns
-        into DATABASE_NOT_OPENED. Deliberately never triggers an unlock: a
-        request arriving from a browser must not be able to raise a password
-        prompt, or a hostile local process could induce the user to unlock.
+        into DATABASE_NOT_OPENED. Never unlocks anything itself; bringing up the
+        window is request_unlock()'s job, and only when the browser asked for it.
         """
         self._watch_managers()
 
@@ -113,6 +118,40 @@ class ApplicationBackend:
         return self._application.get_active_window() or next(
             iter(self._application.get_windows()), None
         )
+
+    async def request_unlock(self) -> None:
+        """Bring up the window so the user can unlock the safe.
+
+        Sent by the extension as triggerUnlock when the user actively asked for
+        credentials against a locked safe. Returns without waiting: the request
+        that prompted it is answered with DATABASE_NOT_OPENED, and the browser
+        finds out the safe is open from the database-unlocked signal, which the
+        listener attached by _watch_managers() will emit.
+
+        Rate limited. Any process on the socket can ask for this, including
+        before it has associated, since get-databasehash needs no association.
+        Without a limit that is a way to flood the desktop with window
+        activations, and to train a user into typing their password at an
+        unexpected prompt.
+        """
+        now = GLib.get_monotonic_time()
+        if now - self._last_unlock_request < UNLOCK_REQUEST_INTERVAL:
+            logging.debug("Ignoring unlock request; one was just made")
+            return
+
+        self._last_unlock_request = now
+
+        # Mirrors do_activate(): present what is there, otherwise create a
+        # window on the initial screen. Deliberately does not choose a safe or
+        # prefill anything -- the user does that.
+        window = self._application.get_active_window()
+        if window is None:
+            self._application.activate()
+            logging.info("Browser asked to unlock; opened a window")
+            return
+
+        window.present()
+        logging.info("Browser asked to unlock; presented the window")
 
     async def confirm_association(self, key_id: str) -> str | None:
         """Ask the user to name and approve a new browser association."""
