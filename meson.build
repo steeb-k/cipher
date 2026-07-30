@@ -22,6 +22,8 @@ python_bin = python.find_installation(
     'zxcvbn_rs_py',
     'PyKCS11',
     'yubico',
+    'nacl',
+    'lxml',
   ],
 )
 if not python_bin.found()

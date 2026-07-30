@@ -1,0 +1,142 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""Bridge between a browser's native messaging port and Cipher's socket.
+
+The browser speaks native messaging on stdio: a 4-byte native-endian length
+prefix followed by a JSON payload. Cipher's Unix socket speaks bare JSON with
+no framing. This process translates between the two and does nothing else --
+in particular it never parses or inspects the payloads, so it holds no
+credentials and needs no crypto.
+
+Run as the browser's native messaging host; it is not useful standalone.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import struct
+import sys
+import threading
+from pathlib import Path
+
+APP_ID = "io.github.steeb_k.Cipher"
+SOCKET_NAME = "BrowserServer"
+
+# Firefox caps messages from the extension at 1 MiB.
+MAX_MESSAGE = 1024 * 1024
+
+
+def socket_path() -> Path:
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return Path(runtime_dir) / APP_ID / SOCKET_NAME
+
+
+def log(message: str) -> None:
+    """Log to stderr; stdout is reserved for the native messaging channel."""
+    print(f"cipher-proxy: {message}", file=sys.stderr, flush=True)
+
+
+def read_native_message() -> bytes | None:
+    """Read one length-prefixed message from stdin."""
+    header = sys.stdin.buffer.read(4)
+    if len(header) < 4:
+        return None
+
+    (length,) = struct.unpack("=I", header)
+    if length > MAX_MESSAGE:
+        log(f"refusing oversized message ({length} bytes)")
+        return None
+
+    payload = sys.stdin.buffer.read(length)
+    return payload if len(payload) == length else None
+
+
+def write_native_message(payload: bytes) -> None:
+    """Write one length-prefixed message to stdout."""
+    sys.stdout.buffer.write(struct.pack("=I", len(payload)))
+    sys.stdout.buffer.write(payload)
+    sys.stdout.buffer.flush()
+
+
+def browser_to_socket(sock: socket.socket) -> None:
+    try:
+        while True:
+            message = read_native_message()
+            if message is None:
+                break
+            sock.sendall(message)
+    except (OSError, struct.error) as exc:
+        log(f"browser->socket ended: {exc}")
+    finally:
+        # Unblock the reader in the other direction.
+        try:
+            sock.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+
+
+def socket_to_browser(sock: socket.socket) -> None:
+    """Forward JSON objects from the socket, reframing them for the browser.
+
+    Cipher may coalesce replies into a single read, so objects are split apart
+    here rather than forwarded verbatim -- the browser needs exactly one
+    message per frame.
+    """
+    decoder = json.JSONDecoder()
+    buffer = ""
+
+    try:
+        while True:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+
+            buffer += chunk.decode("utf-8", errors="replace")
+            while buffer:
+                stripped = buffer.lstrip()
+                if not stripped:
+                    buffer = ""
+                    break
+                try:
+                    obj, end = decoder.raw_decode(stripped)
+                except json.JSONDecodeError:
+                    buffer = stripped  # incomplete; await more bytes
+                    break
+                buffer = stripped[end:]
+                write_native_message(json.dumps(obj).encode("utf-8"))
+    except OSError as exc:
+        log(f"socket->browser ended: {exc}")
+
+
+def main() -> int:
+    path = socket_path()
+
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.connect(str(path))
+    except OSError as exc:
+        log(f"cannot connect to {path}: {exc}")
+        # Report the failure in-band so the extension can surface it, using
+        # the protocol's TIMEOUT_OR_NOT_CONNECTED code.
+        write_native_message(
+            json.dumps(
+                {"action": "", "error": f"Cipher is not running: {exc}", "errorCode": 5}
+            ).encode("utf-8")
+        )
+        return 1
+
+    log(f"connected to {path}")
+
+    reader = threading.Thread(target=socket_to_browser, args=(sock,), daemon=True)
+    reader.start()
+    browser_to_socket(sock)
+    reader.join(timeout=2)
+
+    sock.close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
