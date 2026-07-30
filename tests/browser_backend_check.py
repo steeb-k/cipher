@@ -293,6 +293,38 @@ async def run_checks(tmpdir: Path) -> None:
     check("relocking signals again",
           signals[-1] == "database-locked", f"got {signals}")
 
+    print("\nPassword generation follows the application's settings")
+    from gsecrets import config_manager
+
+    config_manager.setting.set_int("generator-length", 24)
+    config_manager.setting.set_boolean("generator-use-uppercase", True)
+    config_manager.setting.set_boolean("generator-use-lowercase", True)
+    config_manager.setting.set_boolean("generator-use-numbers", True)
+    config_manager.setting.set_boolean("generator-use-symbols", False)
+
+    generated = await backend.generate_password()
+    check(f"length follows the setting ({len(generated)} == 24)",
+          len(generated) == 24)
+    check("no symbols, as configured",
+          all(c.isalnum() for c in generated), f"got {generated!r}")
+    check("contains every enabled class",
+          any(c.isupper() for c in generated)
+          and any(c.islower() for c in generated)
+          and any(c.isdigit() for c in generated),
+          f"got {generated!r}")
+
+    config_manager.setting.set_int("generator-length", 8)
+    check("a changed setting is picked up on the next call",
+          len(await backend.generate_password()) == 8)
+
+    # The pathological case the generator used to hang on, now reachable from a
+    # browser request.
+    config_manager.setting.set_int("generator-length", 1)
+    config_manager.setting.set_boolean("generator-use-symbols", True)
+    short = await backend.generate_password()
+    check("an unsatisfiable request returns instead of hanging",
+          len(short) == 1, f"got {short!r}")
+
     print("\nSummoning the unlock window")
     presented = backend._application.presented  # noqa: SLF001
     await backend.request_unlock()

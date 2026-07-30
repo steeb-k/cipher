@@ -153,6 +153,13 @@ class DevBackend:
 
         return group.name, group.uuid.hex
 
+
+    async def generate_password(self) -> str:
+        """Uses the real generator; only reading its settings needs a schema."""
+        from gsecrets import password_generator
+
+        return password_generator.generate(20, True, True, True, False)
+
     async def lock(self) -> None:
         # Only signal on a real transition, mirroring notify::locked, which
         # GObject emits only when the value changes.

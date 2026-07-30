@@ -21,12 +21,17 @@ from gsecrets.browser.errors import ProtocolError
 # actually implement, not Cipher's own version.
 #
 # Raise it as actions land. Still unimplemented above this level:
-#   2.7.0  -> generate-password, favicon download after set-login
 #   2.7.7  -> passkeys-get, passkeys-register
 #   2.7.10 -> passkeys default group
 # Claiming a level we do not implement makes the extension attempt those
 # actions on real sites and get INCORRECT_ACTION back.
-PROTOCOL_VERSION = "2.6.1"  # get-totp
+#
+# 2.7.0 also advertises downloading a favicon after set-login, which is not
+# implemented. That is safe to claim: the feature flag only decides whether the
+# extension shows the option at all, the option itself defaults to off, and if it
+# is switched on the extra downloadFavicon field is simply ignored here, so the
+# entry is saved without an icon rather than failing.
+PROTOCOL_VERSION = "2.7.0"  # generate-password
 
 
 class Backend(Protocol):
@@ -72,6 +77,13 @@ class Backend(Protocol):
         `path` may name a single group or a slash-separated path, in which case
         every missing level is created. Backend-owned for the same reason as
         set_login.
+        """
+
+    async def generate_password(self) -> str:
+        """Generate a password using the application's own generator settings.
+
+        Backend-owned because reading those settings needs a GSettings schema,
+        which this module must not require.
         """
 
     async def lock(self) -> None:
@@ -478,6 +490,26 @@ class RequestHandler:
 
         return {"name": created_name, "uuid": uuid}
 
+    async def _generate_password(
+        self, _payload: dict[str, Any], client_id: str
+    ) -> dict[str, Any]:
+        # Identifies no association, and generatePassword() calls
+        # testAssociation() first, so this is the available check.
+        self._require_any_verified(client_id)
+
+        # Deliberately does not require an unlocked safe: generating a password
+        # reads nothing from it, and refusing would be gratuitous.
+        password = await self._backend.generate_password()
+        if not password:
+            raise ProtocolError(
+                errors.UNKNOWN_ERROR, "the generator returned nothing"
+            )
+
+        # The field is "password". Versions before 2.7.0 returned "entries", and
+        # the extension still falls back to it, but there is no reason to send
+        # the older shape.
+        return {"password": password}
+
     async def _lock_database(
         self, _payload: dict[str, Any], _client_id: str
     ) -> dict[str, Any]:
@@ -506,6 +538,7 @@ class RequestHandler:
         "get-totp": _get_totp,
         "get-database-groups": _get_database_groups,
         "create-new-group": _create_new_group,
+        "generate-password": _generate_password,
         "lock-database": _lock_database,
     }
 

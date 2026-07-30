@@ -139,6 +139,13 @@ class FakeBackend:
 
         return group.name, group.uuid.hex
 
+
+    async def generate_password(self) -> str:
+        """Uses the real generator; only reading its settings needs a schema."""
+        from gsecrets import password_generator
+
+        return password_generator.generate(20, True, True, True, False)
+
     async def lock(self) -> None:
         """Locking is modelled as the database becoming unavailable.
 
@@ -446,6 +453,23 @@ async def run_checks(tmpdir: Path) -> None:
         f"got {response}",
     )
 
+    print("\nPassword generation")
+    response = await client.send(
+        "generate-password", {"action": "generate-password"}
+    )
+    generated = response.get("password")
+    check("generate-password returns a password in the 'password' field",
+          isinstance(generated, str) and len(generated) == 20,
+          f"got {response}")
+    check("the reported version advertises the generator",
+          response.get("version") == "2.7.0", f"got {response.get('version')}")
+
+    second = (await client.send(
+        "generate-password", {"action": "generate-password"}
+    )).get("password")
+    check("successive calls differ, so it is generating rather than echoing",
+          generated != second, f"{generated!r} vs {second!r}")
+
     print("\nGroup tree")
     response = await client.send(
         "get-database-groups", {"action": "get-database-groups"}
@@ -691,6 +715,15 @@ async def run_checks(tmpdir: Path) -> None:
     )
     check("no group was created by the unverified client",
           not any(g.name == "Intruder" for g in db.groups))
+
+    response = await intruder.send(
+        "generate-password", {"action": "generate-password"}
+    )
+    check(
+        "an unverified client cannot use the generator",
+        response.get("errorCode") == 8,
+        f"got {response}",
+    )
     writer2.close()
 
     print("\nLocked database")

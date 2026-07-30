@@ -14,6 +14,7 @@ from gettext import gettext as _
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
+from gsecrets import config_manager, password_generator
 from gsecrets.safe_element import SafeGroup
 
 # Shortest gap between honouring two unlock requests, in microseconds to match
@@ -300,6 +301,22 @@ class ApplicationBackend:
             group = group.new_subgroup(part)
 
         return group.props.name, group.uuid.hex
+
+    async def generate_password(self) -> str:
+        """Generate a password using the application's own generator settings.
+
+        The same settings the built-in generator uses, so a password produced
+        for the browser matches one produced in the interface. Synchronous and
+        fast; it is bounded internally, so an unsatisfiable combination of
+        requirements cannot stall the loop this runs on.
+        """
+        return password_generator.generate(
+            config_manager.get_generator_length(),
+            config_manager.get_generator_use_uppercase(),
+            config_manager.get_generator_use_lowercase(),
+            config_manager.get_generator_use_numbers(),
+            config_manager.get_generator_use_symbols(),
+        )
 
     async def lock(self) -> None:
         """Lock the safe, as UnlockedDatabase.lock_safe() does.
