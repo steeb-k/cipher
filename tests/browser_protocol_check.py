@@ -74,10 +74,10 @@ class FakeBackend:
     def get_database(self):
         return self.db
 
-    def confirm_association(self, key_id: str) -> str | None:
+    async def confirm_association(self, key_id: str) -> str | None:
         return self.association_name if self.approve else None
 
-    def save(self) -> None:
+    async def save(self) -> None:
         self.saved += 1
 
 

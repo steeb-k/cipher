@@ -74,7 +74,7 @@ class DevBackend:
     def get_database(self) -> PyKeePass:
         return self._db
 
-    def confirm_association(self, key_id: str) -> str | None:
+    async def confirm_association(self, key_id: str) -> str | None:
         print("\n--- association request ---")
         print(f"  client key: {key_id[:16]}...")
 
@@ -82,16 +82,23 @@ class DevBackend:
             print("  auto-approved as 'cipher-bridge'")
             return "cipher-bridge"
 
-        try:
-            name = input("  name to save it as (blank to deny): ").strip()
-        except (EOFError, KeyboardInterrupt):
+        def prompt() -> str | None:
+            try:
+                return input("  name to save it as (blank to deny): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return None
+
+        # In a thread so a blocking read on stdin does not stall the event loop
+        # and with it every other socket connection.
+        name = await asyncio.to_thread(prompt)
+        if not name:
             print("  denied")
             return None
 
-        return name or None
+        return name
 
-    def save(self) -> None:
-        self._db.save()
+    async def save(self) -> None:
+        await asyncio.to_thread(self._db.save)
         print("  database saved")
 
 

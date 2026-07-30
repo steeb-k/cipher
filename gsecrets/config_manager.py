@@ -32,6 +32,7 @@ GENERATOR_WORDS = "generator-words"
 GENERATOR_SEPARATOR = "generator-separator"
 LOCK_ON_SESSION_LOCK = "lock-on-session-lock"
 FINGERPRINT_QUICK_UNLOCK = "fingerprint-quick-unlock"
+BROWSER_INTEGRATION = "browser-integration"
 QUICK_UNLOCK = "quick-unlock"
 
 
@@ -207,6 +208,14 @@ def get_fingerprint_quick_unlock():
 
 def set_fingerprint_quick_unlock(value: bool) -> None:
     setting.set_boolean(FINGERPRINT_QUICK_UNLOCK, value)
+
+
+def get_browser_integration() -> bool:
+    return setting.get_boolean(BROWSER_INTEGRATION)
+
+
+def set_browser_integration(value: bool) -> None:
+    setting.set_boolean(BROWSER_INTEGRATION, value)
 
 
 def get_quick_unlock():

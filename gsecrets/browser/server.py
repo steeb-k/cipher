@@ -78,6 +78,7 @@ class BrowserServer:
 
     async def stop(self) -> None:
         if self._server is None:
+            self._path.unlink(missing_ok=True)
             return
 
         self._server.close()
@@ -86,6 +87,22 @@ class BrowserServer:
 
         self._path.unlink(missing_ok=True)
         logging.info("Browser server stopped")
+
+    def close(self) -> None:
+        """Stop listening and remove the socket, without awaiting anything.
+
+        For use from application shutdown. Scheduling stop() as a task there
+        does not work: the event loop is already being torn down, so the task
+        never runs and the socket is left behind for the next run to find.
+        AbstractServer.close() is synchronous; only wait_closed() is not, and
+        waiting for connections to drain is pointless at process exit.
+        """
+        if self._server is not None:
+            self._server.close()
+            self._server = None
+
+        self._path.unlink(missing_ok=True)
+        logging.info("Browser server closed")
 
     def _remove_stale_socket(self) -> None:
         """Clear a socket left behind by a previous run.
@@ -156,19 +173,19 @@ class BrowserServer:
                 return stripped
 
             buffer = stripped[end:]
-            response = self._dispatch(handler, request)
+            response = await self._dispatch(handler, request)
             if response is not None:
                 writer.write(json.dumps(response).encode("utf-8"))
                 await writer.drain()
 
         return buffer
 
-    def _dispatch(self, handler: RequestHandler, request: dict) -> dict | None:
+    async def _dispatch(self, handler: RequestHandler, request: dict) -> dict | None:
         action = request.get("action") if isinstance(request, dict) else None
         try:
             if not isinstance(request, dict):
                 raise ProtocolError(0, "request is not a JSON object")
-            return handler.handle(request)
+            return await handler.handle(request)
         except ProtocolError as exc:
             return error_response(action, exc)
         except Exception as exc:  # noqa: BLE001 - never kill the connection

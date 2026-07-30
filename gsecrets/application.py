@@ -8,7 +8,9 @@ from gettext import gettext as _
 from gi.events import GLibEventLoopPolicy
 from gi.repository import Adw, Gio, GLib, Gtk, GtkSource
 
-from gsecrets import const
+from gsecrets import config_manager, const
+from gsecrets.browser.backend import ApplicationBackend
+from gsecrets.browser.server import BrowserServer
 from gsecrets.recent_manager import RecentManager
 from gsecrets.widgets.mod import load_widgets
 from gsecrets.widgets.window import Window
@@ -29,6 +31,8 @@ class Application(Adw.Application):
         )
 
         asyncio.set_event_loop_policy(GLibEventLoopPolicy())
+
+        self._browser_server: BrowserServer | None = None
 
         # debug level logging option
         self.add_main_option(
@@ -54,6 +58,50 @@ class Application(Adw.Application):
 
         recents = RecentManager()
         self.create_asyncio_task(recents.clean_non_existent())
+
+        self.settings.connect(
+            f"changed::{config_manager.BROWSER_INTEGRATION}",
+            self._on_browser_integration_changed,
+        )
+        if config_manager.get_browser_integration():
+            self.create_asyncio_task(self._start_browser_server())
+
+    def do_shutdown(self):  # pylint: disable=arguments-differ
+        if server := self._browser_server:
+            # Synchronous by necessity: an asyncio task scheduled here never
+            # runs, because the event loop is already being torn down, and the
+            # socket would survive the process.
+            self._browser_server = None
+            server.close()
+
+        Adw.Application.do_shutdown(self)
+
+    def _on_browser_integration_changed(
+        self, _settings: Gio.Settings, _key: str
+    ) -> None:
+        """Start or stop the browser server when the setting is toggled."""
+        enabled = config_manager.get_browser_integration()
+        if enabled and self._browser_server is None:
+            self.create_asyncio_task(self._start_browser_server())
+        elif not enabled and (server := self._browser_server):
+            self._browser_server = None
+            self.create_asyncio_task(server.stop())
+
+    async def _start_browser_server(self) -> None:
+        if self._browser_server is not None:
+            return
+
+        server = BrowserServer(ApplicationBackend(self))
+        try:
+            await server.start()
+        except (OSError, RuntimeError) as err:
+            # Most likely another instance already holds the socket. Log and
+            # carry on: failing to serve a browser must not stop the safe from
+            # being usable.
+            logging.warning("Could not start browser integration: %s", err)
+            return
+
+        self._browser_server = server
 
     def do_open(self, gfile_list, _n_files, _hint):  # pylint: disable=arguments-differ
         for gfile in gfile_list:

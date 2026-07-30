@@ -11,3 +11,11 @@ test(
   args: files('test_password_generator.py'),
   env: envs,
 )
+
+# Standalone rather than pytest-based, so it runs wherever PyNaCl is available.
+test(
+  'Test Browser Protocol',
+  python_bin,
+  args: files('browser_protocol_check.py'),
+  env: envs,
+)

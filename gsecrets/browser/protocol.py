@@ -37,13 +37,17 @@ class Backend(Protocol):
     def get_database(self):
         """Return the unlocked PyKeePass database, or None if unavailable."""
 
-    def confirm_association(self, key_id: str) -> str | None:
+    async def confirm_association(self, key_id: str) -> str | None:
         """Ask the user to approve a new association.
 
-        Returns the name to store it under, or None if declined.
+        Returns the name to store it under, or None if declined. Asynchronous
+        because the real implementation presents a dialog and the extension
+        expects a single blocking reply; the alternative -- returning "pending"
+        and having the client retry -- is not something the protocol provides
+        for.
         """
 
-    def save(self) -> None:
+    async def save(self) -> None:
         """Persist pending database changes."""
 
 
@@ -97,7 +101,7 @@ class RequestHandler:
 
     # -- dispatch --------------------------------------------------------
 
-    def handle(self, request: dict[str, Any]) -> dict[str, Any] | None:
+    async def handle(self, request: dict[str, Any]) -> dict[str, Any] | None:
         """Handle one request envelope and return the response envelope."""
         action = request.get("action")
         if not action:
@@ -124,7 +128,7 @@ class RequestHandler:
                 errors.INCORRECT_ACTION, f"unsupported action: {action}"
             )
 
-        result = handler(self, payload)
+        result = await handler(self, payload)
 
         # Responses echo the request nonce incremented by one, both in the
         # envelope and inside the encrypted payload; the extension checks both.
@@ -175,28 +179,28 @@ class RequestHandler:
             "success": "true",
         }
 
-    def _get_databasehash(self, _payload: dict[str, Any]) -> dict[str, Any]:
+    async def _get_databasehash(self, _payload: dict[str, Any]) -> dict[str, Any]:
         return {"action": "hash", "hash": store.database_hash(self._database())}
 
-    def _associate(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _associate(self, payload: dict[str, Any]) -> dict[str, Any]:
         db = self._database()
 
         id_key = payload.get("idKey")
         if not id_key:
             raise ProtocolError(errors.ASSOCIATION_FAILED, "missing idKey")
 
-        name = self._backend.confirm_association(id_key)
+        name = await self._backend.confirm_association(id_key)
         if not name:
             raise ProtocolError(
                 errors.ACTION_CANCELLED_OR_DENIED, "association declined"
             )
 
         store.set_association(db, name, id_key)
-        self._backend.save()
+        await self._backend.save()
 
         return {"hash": store.database_hash(db), "id": name}
 
-    def _test_associate(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _test_associate(self, payload: dict[str, Any]) -> dict[str, Any]:
         db = self._database()
 
         name, key = payload.get("id"), payload.get("key")
@@ -210,7 +214,7 @@ class RequestHandler:
 
         return {"hash": store.database_hash(db), "id": name}
 
-    def _get_logins(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _get_logins(self, payload: dict[str, Any]) -> dict[str, Any]:
         db = self._database()
 
         url = payload.get("url")
@@ -240,7 +244,7 @@ class RequestHandler:
             "hash": store.database_hash(db),
         }
 
-    def _lock_database(self, _payload: dict[str, Any]) -> dict[str, Any]:
+    async def _lock_database(self, _payload: dict[str, Any]) -> dict[str, Any]:
         raise ProtocolError(
             errors.INCORRECT_ACTION, "lock-database is not implemented yet"
         )
