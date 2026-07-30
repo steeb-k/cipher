@@ -47,6 +47,10 @@ _ensure_const()
 from nacl.public import Box, PrivateKey, PublicKey  # noqa: E402
 from nacl.utils import random as nacl_random  # noqa: E402
 from pykeepass import create_database  # noqa: E402
+from pyotp import TOTP  # noqa: E402
+
+# Base32, so pyotp accepts it; the expected code is computed with pyotp too.
+TOTP_SECRET = "JBSWY3DPEHPK3PXP"
 
 from gsecrets.browser import crypto, store  # noqa: E402
 from gsecrets.browser.server import BrowserServer  # noqa: E402
@@ -187,6 +191,17 @@ def build_database(path: Path):
     add(db.root_group, "Example", "alice", "pw-example", url="https://example.com")
     add(db.root_group, "Lookalike", "mallory", "pw-evil", url="https://notgithub.com")
     add(db.root_group, "NoUrl", "nobody", "pw-nourl")
+
+    # A known base32 secret, so the expected code can be computed independently.
+    otp_entry = add(db.root_group, "WithTotp", "totpuser", "totppass",
+                    url="https://totp.example")
+    otp_entry.otp = TOTP_SECRET
+
+    # A malformed secret must not break lookups for the site it shares.
+    broken = add(db.root_group, "BrokenTotp", "brokenuser", "brokenpass",
+                 url="https://broken.example")
+    broken.otp = "not!valid!base32"
+
     db.save()
     return db
 
@@ -313,6 +328,64 @@ async def run_checks(tmpdir: Path) -> None:
         f"got {response}",
     )
 
+    print("\nOne-time passwords")
+    response = await client.send("get-logins", {
+        "action": "get-logins", "url": "https://totp.example", "keys": keys,
+    })
+    entries = response.get("entries", [])
+    totp_uuid = entries[0]["uuid"] if entries else None
+    check(
+        "get-logins advertises TOTP, which is what makes the extension ask",
+        bool(entries) and entries[0].get("totp"),
+        f"got {entries}",
+    )
+
+    response = await client.send("get-totp", {"action": "get-totp", "uuid": totp_uuid})
+    expected = TOTP(TOTP_SECRET).now()
+    check(
+        "get-totp returns the current code",
+        response.get("totp") == expected,
+        f"got {response.get('totp')!r}, expected {expected!r}",
+    )
+
+    response = await client.send("get-logins", {
+        "action": "get-logins", "url": "https://example.com", "keys": keys,
+    })
+    entries = response.get("entries", [])
+    check(
+        "an entry without TOTP advertises an empty string",
+        bool(entries) and entries[0].get("totp") == "",
+        f"got {entries}",
+    )
+
+    print("\nMalformed TOTP secrets")
+    response = await client.send("get-logins", {
+        "action": "get-logins", "url": "https://broken.example", "keys": keys,
+    })
+    entries = response.get("entries", [])
+    check(
+        "an unparseable secret does not break the credential lookup",
+        len(entries) == 1 and entries[0].get("password") == "brokenpass",
+        f"got {response}",
+    )
+    check("the broken entry advertises no TOTP",
+          bool(entries) and entries[0].get("totp") == "")
+
+    response = await client.send("get-totp", {
+        "action": "get-totp", "uuid": entries[0]["uuid"] if entries else "",
+    })
+    check(
+        "get-totp on an unusable secret reports an error rather than a bad code",
+        response.get("errorCode") == 0,
+        f"got {response}",
+    )
+
+    response = await client.send("get-totp", {
+        "action": "get-totp", "uuid": "00000000000000000000000000000000",
+    })
+    check("get-totp for an unknown uuid is refused",
+          response.get("errorCode") == 18, f"got {response}")
+
     print("\nCreating a login")
     response = await client.send("set-login", {
         "action": "set-login", "id": client.association_id,
@@ -398,6 +471,15 @@ async def run_checks(tmpdir: Path) -> None:
     check("no entry was created by the unverified client", not any(
         e.username == "attacker" for e in db.entries
     ))
+
+    response = await intruder.send("get-totp", {
+        "action": "get-totp", "uuid": totp_uuid,
+    })
+    check(
+        "an unverified client cannot read one-time passwords",
+        response.get("errorCode") == 8,
+        f"got {response}",
+    )
     writer2.close()
 
     print("\nLocked database")

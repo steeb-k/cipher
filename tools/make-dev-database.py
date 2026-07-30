@@ -24,6 +24,9 @@ from pykeepass import create_database
 
 DEFAULT_PASSWORD = "cipher-dev"
 
+# A well-known test secret, not a real one.
+TOTP_SECRET = "JBSWY3DPEHPK3PXP"
+
 # (title, username, password, url)
 ENTRIES = [
     ("GitHub", "octocat", "dev-github-pw", "https://github.com/login"),
@@ -56,7 +59,10 @@ def main() -> int:
 
     db = create_database(str(args.output), password=args.password)
     for title, username, password, url in ENTRIES:
-        db.add_entry(db.root_group, title, username, password, url=url or "")
+        entry = db.add_entry(db.root_group, title, username, password, url=url or "")
+        # Give one entry a one-time password so the TOTP path can be exercised.
+        if title == "Example":
+            entry.otp = TOTP_SECRET
     db.save()
 
     print(f"wrote    {args.output}")

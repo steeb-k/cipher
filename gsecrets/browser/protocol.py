@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Protocol
 
-from gsecrets.browser import crypto, errors, matching, store
+from gsecrets.browser import crypto, errors, matching, store, totp
 from gsecrets.browser.crypto import ClientSession
 from gsecrets.browser.errors import ProtocolError
 
@@ -20,15 +20,13 @@ from gsecrets.browser.errors import ProtocolError
 # purely by comparing against it. So this must name the highest level we
 # actually implement, not Cipher's own version.
 #
-# 2.6.0 is the extension's minimum supported version and enables nothing
-# optional. Raise it as actions land:
-#   2.6.1  -> get-totp
+# Raise it as actions land. Still unimplemented above this level:
 #   2.7.0  -> generate-password, favicon download after set-login
 #   2.7.7  -> passkeys-get, passkeys-register
 #   2.7.10 -> passkeys default group
 # Claiming a level we do not implement makes the extension attempt those
 # actions on real sites and get INCORRECT_ACTION back.
-PROTOCOL_VERSION = "2.6.0"
+PROTOCOL_VERSION = "2.6.1"  # get-totp
 
 
 class Backend(Protocol):
@@ -122,6 +120,18 @@ class RequestHandler:
 
     def _mark_verified(self, client_id: str, name: str) -> None:
         self._verified.setdefault(client_id, set()).add(name)
+
+    def _require_any_verified(self, client_id: str) -> None:
+        """Require that this client verified at least one association.
+
+        For actions that identify no association at all, so there is nothing
+        more specific to check against.
+        """
+        if not self._verified.get(client_id):
+            raise ProtocolError(
+                errors.ASSOCIATION_FAILED,
+                "no association has been verified on this connection",
+            )
 
     def _require_verified(self, client_id: str, name: str) -> None:
         """Require that this client proved it holds the key for `name`.
@@ -285,6 +295,11 @@ class RequestHandler:
         if not matches:
             raise ProtocolError(errors.NO_LOGINS_FOUND, "no matching entries")
 
+        # The totp field doubles as the extension's only signal that an entry
+        # has a one-time password at all: content/fill.js requests a fresh code
+        # over get-totp only when this is non-empty, so omitting it means TOTP
+        # is never offered. It also serves as the fallback code for clients that
+        # predate get-totp.
         entries = [
             {
                 "login": entry.username or "",
@@ -292,6 +307,7 @@ class RequestHandler:
                 "password": entry.password or "",
                 "uuid": entry.uuid.hex,
                 "group": entry.group.name if entry.group else "",
+                "totp": totp.current_token(entry) or "",
             }
             for entry in matches
         ]
@@ -356,6 +372,35 @@ class RequestHandler:
             "hash": store.database_hash(db),
         }
 
+    async def _get_totp(
+        self, payload: dict[str, Any], client_id: str
+    ) -> dict[str, Any]:
+        db = self._database()
+
+        # Carries neither keys nor an association id, so the best available
+        # check is that this connection verified some association. The
+        # extension calls testAssociation() before every get-totp, so this
+        # never refuses a legitimate request.
+        self._require_any_verified(client_id)
+
+        uuid = payload.get("uuid")
+        if not uuid:
+            raise ProtocolError(errors.NO_VALID_UUID_PROVIDED, "missing uuid")
+
+        for entry in db.entries:
+            if entry.uuid.hex != uuid:
+                continue
+
+            token = totp.current_token(entry)
+            if token is None:
+                raise ProtocolError(
+                    errors.UNKNOWN_ERROR, "entry has no usable one-time password"
+                )
+
+            return {"totp": token}
+
+        raise ProtocolError(errors.NO_VALID_UUID_PROVIDED, f"no entry with uuid {uuid}")
+
     async def _lock_database(
         self, _payload: dict[str, Any], _client_id: str
     ) -> dict[str, Any]:
@@ -369,6 +414,7 @@ class RequestHandler:
         "test-associate": _test_associate,
         "get-logins": _get_logins,
         "set-login": _set_login,
+        "get-totp": _get_totp,
         "lock-database": _lock_database,
     }
 
