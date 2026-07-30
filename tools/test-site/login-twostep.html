@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Two-step login &mdash; Cipher Bridge test site</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<h1>Two-step login</h1>
+<p class="note">
+  Username first, password revealed afterwards without a page load. This is the
+  shape that breaks naive field detection: at first paint there is no password
+  field to pair with the username, and the password field appears later in
+  response to a DOM change rather than navigation.
+</p>
+
+<form method="post" action="/submit">
+  <div id="step-username">
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text" autocomplete="username">
+    <button type="button" id="next">Next</button>
+  </div>
+
+  <div id="step-password" hidden>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password">
+    <button type="submit">Sign in</button>
+  </div>
+</form>
+
+<p><a href="index.html">Back</a></p>
+
+<script>
+  // Deliberately reveals the field rather than creating it, and does so on a
+  // short delay, so the extension's mutation observer has to notice it.
+  document.getElementById('next').addEventListener('click', () => {
+    document.getElementById('step-username').hidden = true;
+    setTimeout(() => {
+      const step = document.getElementById('step-password');
+      step.hidden = false;
+      document.getElementById('password').focus();
+    }, 150);
+  });
+</script>
+</main>
+</body>
+</html>

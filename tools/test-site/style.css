@@ -1,0 +1,130 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+:root {
+  color-scheme: light dark;
+  --fg: #1c1b22;
+  --bg: #fdfdfd;
+  --muted: #5b5b66;
+  --line: #d8d8e0;
+  --accent: #5b3fa8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #ececf0;
+    --bg: #1c1b22;
+    --muted: #a9a9b6;
+    --line: #3a3a46;
+    --accent: #9a7ce0;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 2rem 1rem;
+  font: 16px/1.6 system-ui, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+main {
+  max-width: 34rem;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin-top: 0;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin-top: 2rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 0.925rem;
+}
+
+form {
+  margin: 1.5rem 0;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+label {
+  display: block;
+  margin-top: 0.75rem;
+  font-weight: 500;
+  font-size: 0.925rem;
+}
+
+input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.3rem;
+  padding: 0.5rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+button {
+  margin-top: 1.25rem;
+  padding: 0.5rem 1.1rem;
+  font: inherit;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.925rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.submitted {
+  margin: 1.5rem 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.submitted th {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.submitted td {
+  font-family: ui-monospace, monospace;
+}
+
+.empty {
+  color: var(--muted);
+  font-style: italic;
+  font-family: system-ui, sans-serif;
+}

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Simple login &mdash; Cipher Bridge test site</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<h1>Simple login</h1>
+<p class="note">
+  The ordinary case: one username field, one password field, one submit button.
+</p>
+
+<form method="post" action="/submit">
+  <label for="username">Username</label>
+  <input id="username" name="username" type="text" autocomplete="username">
+
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password">
+
+  <button type="submit">Sign in</button>
+</form>
+
+<p><a href="index.html">Back</a></p>
+</main>
+</body>
+</html>

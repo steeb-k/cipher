@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Login with one-time code &mdash; Cipher Bridge test site</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<h1>Login with one-time code</h1>
+<p class="note">
+  The one-time code field carries <code>autocomplete="one-time-code"</code>,
+  which content/totp-field.js accepts unconditionally, and is also named
+  <code>otp</code>, which is in its list of accepted names. Either alone is
+  enough; both are set so a failure here means something other than detection.
+</p>
+
+<form method="post" action="/submit">
+  <label for="username">Username</label>
+  <input id="username" name="username" type="text" autocomplete="username">
+
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password">
+
+  <label for="otp">One-time code</label>
+  <input id="otp" name="otp" type="text" autocomplete="one-time-code"
+         inputmode="numeric" maxlength="6">
+
+  <button type="submit">Sign in</button>
+</form>
+
+<p>
+  Expect the code to match what Cipher shows for the same entry. It changes
+  every 30 seconds, so compare them at the same moment.
+</p>
+
+<p><a href="index.html">Back</a></p>
+</main>
+</body>
+</html>

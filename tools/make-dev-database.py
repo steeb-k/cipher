@@ -27,8 +27,15 @@ DEFAULT_PASSWORD = "cipher-dev"
 # A well-known test secret, not a real one.
 TOTP_SECRET = "JBSWY3DPEHPK3PXP"
 
+# The local test site, which is the only place the TOTP fill path can actually
+# be exercised: it needs a one-time-code field, and real sites will not give you
+# one without an account. Two entries, so the credential picker has a choice.
+LOCAL_SITE = "http://localhost:8765/login.html"
+
 # (title, username, password, url)
 ENTRIES = [
+    ("Local Test Site", "alice", "dev-local-pw", LOCAL_SITE),
+    ("Local Test Site (second account)", "bob", "dev-local-pw-2", LOCAL_SITE),
     ("GitHub", "octocat", "dev-github-pw", "https://github.com/login"),
     ("GitHub Gist", "octocat", "dev-gist-pw", "https://gist.github.com"),
     ("Example", "alice", "dev-example-pw", "https://example.com"),
@@ -60,8 +67,9 @@ def main() -> int:
     db = create_database(str(args.output), password=args.password)
     for title, username, password, url in ENTRIES:
         entry = db.add_entry(db.root_group, title, username, password, url=url or "")
-        # Give one entry a one-time password so the TOTP path can be exercised.
-        if title == "Example":
+        # Only the first local entry gets a one-time password, so the picker
+        # shows one credential with TOTP and one without.
+        if title == "Local Test Site":
             entry.otp = TOTP_SECRET
     db.save()
 
