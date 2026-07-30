@@ -80,6 +80,35 @@ class FakeBackend:
     async def save(self) -> None:
         self.saved += 1
 
+    async def set_login(
+        self,
+        *,
+        url: str,
+        login: str,
+        password: str,
+        title: str,
+        uuid: str | None = None,
+        group_uuid: str | None = None,
+    ) -> bool:
+        """Write through pykeepass; the real backend goes via the UI model."""
+        if uuid:
+            for entry in self.db.entries:
+                if entry.uuid.hex == uuid:
+                    entry.username = login
+                    entry.password = password
+                    return False
+            raise RuntimeError(f"no entry with uuid {uuid}")
+
+        group = self.db.root_group
+        if group_uuid:
+            for candidate in self.db.groups:
+                if candidate.uuid.hex == group_uuid:
+                    group = candidate
+                    break
+
+        self.db.add_entry(group, title, login, password, url=url)
+        return True
+
 
 class Client:
     """The browser half of the protocol."""
@@ -283,6 +312,93 @@ async def run_checks(tmpdir: Path) -> None:
         response.get("errorCode") == 10,
         f"got {response}",
     )
+
+    print("\nCreating a login")
+    response = await client.send("set-login", {
+        "action": "set-login", "id": client.association_id,
+        "url": "https://newsite.example/login", "submitUrl": "https://newsite.example/login",
+        "login": "freshuser", "password": "freshpass",
+    })
+    check("set-login succeeds", response.get("success") == "true", f"got {response}")
+    check(
+        "error field is empty, so the extension reports success",
+        response.get("error") == "",
+        f"got {response.get('error')!r}",
+    )
+    check("the entry was written to the database", any(
+        e.username == "freshuser" and e.password == "freshpass" for e in db.entries
+    ))
+    check("the new entry is titled by host", any(
+        e.title == "newsite.example" for e in db.entries
+    ), f"titles: {[e.title for e in db.entries]}")
+
+    print("\nThe created login is retrievable")
+    response = await client.send("get-logins", {
+        "action": "get-logins", "url": "https://newsite.example/login", "keys": keys,
+    })
+    entries = response.get("entries", [])
+    check(
+        "get-logins returns what set-login stored",
+        len(entries) == 1 and entries[0].get("password") == "freshpass",
+        f"got {entries}",
+    )
+    created_uuid = entries[0]["uuid"] if entries else None
+
+    print("\nUpdating an existing login")
+    response = await client.send("set-login", {
+        "action": "set-login", "id": client.association_id,
+        "url": "https://newsite.example/login", "submitUrl": "https://newsite.example/login",
+        "login": "freshuser", "password": "rotatedpass", "uuid": created_uuid,
+    })
+    check("update succeeds", response.get("success") == "true", f"got {response}")
+    matches = [e for e in db.entries if e.uuid.hex == created_uuid]
+    check(
+        "the password was rotated in place, not duplicated",
+        len(matches) == 1 and matches[0].password == "rotatedpass",
+        f"got {[(e.title, e.password) for e in matches]}",
+    )
+
+    print("\nset-login refuses bad input")
+    response = await client.send("set-login", {
+        "action": "set-login", "id": client.association_id,
+        "url": "https://newsite.example/login", "login": "x", "password": "",
+    })
+    check(
+        "an empty password is refused",
+        response.get("errorCode") == 0,
+        f"got {response}",
+    )
+
+    response = await client.send("set-login", {
+        "action": "set-login", "id": client.association_id,
+        "url": "https://newsite.example/login", "login": "x", "password": "y",
+        "uuid": "00000000000000000000000000000000",
+    })
+    check(
+        "updating a deleted entry is refused rather than recreated",
+        response.get("errorCode") == 0,
+        f"got {response}",
+    )
+
+    print("\nset-login requires a verified association")
+    # A second client completes the handshake but never proves it holds the
+    # association key, which is all set-login itself would demand.
+    reader2, writer2 = await asyncio.open_unix_connection(str(server.path))
+    intruder = Client(reader2, writer2)
+    await intruder.change_public_keys()
+    response = await intruder.send("set-login", {
+        "action": "set-login", "id": client.association_id,
+        "url": "https://victim.example/login", "login": "attacker", "password": "pwned",
+    })
+    check(
+        "an unverified client cannot write entries",
+        response.get("errorCode") == 8,
+        f"got {response}",
+    )
+    check("no entry was created by the unverified client", not any(
+        e.username == "attacker" for e in db.entries
+    ))
+    writer2.close()
 
     print("\nLocked database")
     backend.db = None

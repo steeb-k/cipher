@@ -50,6 +50,24 @@ class Backend(Protocol):
     async def save(self) -> None:
         """Persist pending database changes."""
 
+    async def set_login(
+        self,
+        *,
+        url: str,
+        login: str,
+        password: str,
+        title: str,
+        uuid: str | None = None,
+        group_uuid: str | None = None,
+    ) -> bool:
+        """Create or update a login, returning True if one was created.
+
+        Owned by the backend rather than done here through pykeepass, because
+        the application keeps a parallel model of the database that drives its
+        UI. Writing entries behind that model's back leaves the visible list
+        stale until the safe is reopened.
+        """
+
 
 class RequestHandler:
     """Handles decrypted requests for a single client connection."""
@@ -57,6 +75,9 @@ class RequestHandler:
     def __init__(self, backend: Backend) -> None:
         self._backend = backend
         self._sessions: dict[str, ClientSession] = {}
+        # Association names this connection has proven it holds the key for,
+        # per client. See _require_verified().
+        self._verified: dict[str, set[str]] = {}
 
     # -- session helpers -------------------------------------------------
 
@@ -99,6 +120,30 @@ class RequestHandler:
             errors.ENCRYPTION_KEY_UNRECOGNIZED, "no recognised association key"
         )
 
+    def _mark_verified(self, client_id: str, name: str) -> None:
+        self._verified.setdefault(client_id, set()).add(name)
+
+    def _require_verified(self, client_id: str, name: str) -> None:
+        """Require that this client proved it holds the key for `name`.
+
+        set-login sends only the association id, never the key, so unlike
+        get-logins it carries no proof of its own. An id alone is guessable,
+        and the encrypted channel proves nothing about identity because any
+        local process can complete a key exchange. Without this check, any such
+        process could write entries into the open safe.
+
+        Requiring the id to have been verified earlier on this same connection
+        closes that: verification happens in associate and test-associate, both
+        of which check the key. The extension's updateCredentials() always calls
+        testAssociation() first, and that always makes a round trip, so this
+        costs nothing in practice.
+        """
+        if name not in self._verified.get(client_id, ()):
+            raise ProtocolError(
+                errors.ASSOCIATION_FAILED,
+                "association has not been verified on this connection",
+            )
+
     # -- dispatch --------------------------------------------------------
 
     async def handle(self, request: dict[str, Any]) -> dict[str, Any] | None:
@@ -128,7 +173,7 @@ class RequestHandler:
                 errors.INCORRECT_ACTION, f"unsupported action: {action}"
             )
 
-        result = await handler(self, payload)
+        result = await handler(self, payload, client_id)
 
         # Responses echo the request nonce incremented by one, both in the
         # envelope and inside the encrypted payload; the extension checks both.
@@ -179,10 +224,14 @@ class RequestHandler:
             "success": "true",
         }
 
-    async def _get_databasehash(self, _payload: dict[str, Any]) -> dict[str, Any]:
+    async def _get_databasehash(
+        self, _payload: dict[str, Any], _client_id: str
+    ) -> dict[str, Any]:
         return {"action": "hash", "hash": store.database_hash(self._database())}
 
-    async def _associate(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _associate(
+        self, payload: dict[str, Any], client_id: str
+    ) -> dict[str, Any]:
         db = self._database()
 
         id_key = payload.get("idKey")
@@ -197,10 +246,13 @@ class RequestHandler:
 
         store.set_association(db, name, id_key)
         await self._backend.save()
+        self._mark_verified(client_id, name)
 
         return {"hash": store.database_hash(db), "id": name}
 
-    async def _test_associate(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _test_associate(
+        self, payload: dict[str, Any], client_id: str
+    ) -> dict[str, Any]:
         db = self._database()
 
         name, key = payload.get("id"), payload.get("key")
@@ -212,9 +264,15 @@ class RequestHandler:
                 errors.ASSOCIATION_FAILED, "association not recognised"
             )
 
+        # Comparing the key above is what makes this proof, so record it as the
+        # credential set-login relies on.
+        self._mark_verified(client_id, name)
+
         return {"hash": store.database_hash(db), "id": name}
 
-    async def _get_logins(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _get_logins(
+        self, payload: dict[str, Any], client_id: str
+    ) -> dict[str, Any]:
         db = self._database()
 
         url = payload.get("url")
@@ -244,7 +302,63 @@ class RequestHandler:
             "hash": store.database_hash(db),
         }
 
-    async def _lock_database(self, _payload: dict[str, Any]) -> dict[str, Any]:
+    async def _set_login(
+        self, payload: dict[str, Any], client_id: str
+    ) -> dict[str, Any]:
+        db = self._database()
+
+        name = payload.get("id")
+        if not name:
+            raise ProtocolError(errors.ASSOCIATION_FAILED, "missing association id")
+
+        self._require_verified(client_id, name)
+
+        url = payload.get("url")
+        if not url:
+            raise ProtocolError(errors.NO_URL_PROVIDED, "missing url")
+
+        login = payload.get("login") or ""
+        password = payload.get("password") or ""
+        if not password:
+            # Saving a blank password silently would be worse than refusing:
+            # it looks like a successful save and overwrites a real one.
+            raise ProtocolError(
+                errors.UNKNOWN_ERROR, "refusing to store an empty password"
+            )
+
+        uuid = payload.get("uuid") or None
+        group_uuid = payload.get("groupUuid") or None
+
+        created = await self._backend.set_login(
+            url=url,
+            login=login,
+            password=password,
+            # Entries are titled by host, which is what the user recognises in
+            # the safe and what a bare URL does not give them.
+            title=matching.hostname(url) or url,
+            uuid=uuid,
+            group_uuid=group_uuid,
+        )
+        await self._backend.save()
+
+        logging.info(
+            "Browser %s a login for %s", "created" if created else "updated", url
+        )
+
+        # count and entries are unused for this action but the extension's
+        # response shape includes them; error must be present and empty, since
+        # updateCredentials() reads it to decide between reporting "created"
+        # and surfacing it as a failure message.
+        return {
+            "count": None,
+            "entries": None,
+            "error": "",
+            "hash": store.database_hash(db),
+        }
+
+    async def _lock_database(
+        self, _payload: dict[str, Any], _client_id: str
+    ) -> dict[str, Any]:
         raise ProtocolError(
             errors.INCORRECT_ACTION, "lock-database is not implemented yet"
         )
@@ -254,6 +368,7 @@ class RequestHandler:
         "associate": _associate,
         "test-associate": _test_associate,
         "get-logins": _get_logins,
+        "set-login": _set_login,
         "lock-database": _lock_database,
     }
 

@@ -101,6 +101,37 @@ class DevBackend:
         await asyncio.to_thread(self._db.save)
         print("  database saved")
 
+    async def set_login(
+        self,
+        *,
+        url: str,
+        login: str,
+        password: str,
+        title: str,
+        uuid: str | None = None,
+        group_uuid: str | None = None,
+    ) -> bool:
+        """Write through pykeepass; the application backend uses the UI model."""
+        if uuid:
+            for entry in self._db.entries:
+                if entry.uuid.hex == uuid:
+                    entry.username = login
+                    entry.password = password
+                    print(f"  updated entry {entry.title!r} ({login})")
+                    return False
+            raise RuntimeError(f"no entry with uuid {uuid}")
+
+        group = self._db.root_group
+        if group_uuid:
+            for candidate in self._db.groups:
+                if candidate.uuid.hex == group_uuid:
+                    group = candidate
+                    break
+
+        self._db.add_entry(group, title, login, password, url=url)
+        print(f"  created entry {title!r} ({login}) for {url}")
+        return True
+
 
 async def run(path: Path, password: str, auto_approve: bool) -> int:
     try:

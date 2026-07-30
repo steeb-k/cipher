@@ -12,10 +12,17 @@ test(
   env: envs,
 )
 
-# Standalone rather than pytest-based, so it runs wherever PyNaCl is available.
+# Standalone rather than pytest-based, so they run wherever PyNaCl is available.
 test(
   'Test Browser Protocol',
   python_bin,
   args: files('browser_protocol_check.py'),
+  env: envs,
+)
+
+test(
+  'Test Browser Backend',
+  python_bin,
+  args: files('browser_backend_check.py'),
   env: envs,
 )

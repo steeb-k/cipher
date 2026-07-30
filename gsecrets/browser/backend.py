@@ -14,6 +14,8 @@ from gettext import gettext as _
 
 from gi.repository import Adw, Gio, Gtk
 
+from gsecrets.safe_element import SafeGroup
+
 if typing.TYPE_CHECKING:
     from pykeepass import PyKeePass
 
@@ -114,6 +116,68 @@ class ApplicationBackend:
             return None
 
         return name
+
+    # -- writing ---------------------------------------------------------
+
+    def _find_entry(self, database_manager: DatabaseManager, uuid: str):
+        """Locate a SafeEntry by the hex UUID handed out in get-logins."""
+        entries = database_manager.entries
+        for index in range(entries.get_n_items()):
+            entry = entries.get_item(index)
+            if entry.uuid.hex == uuid:
+                return entry
+
+        return None
+
+    def _find_group(self, database_manager: DatabaseManager, uuid: str | None):
+        """Locate a SafeGroup by hex UUID, falling back to the root group."""
+        if uuid:
+            groups = database_manager.groups
+            for index in range(groups.get_n_items()):
+                group = groups.get_item(index)
+                if group.uuid.hex == uuid:
+                    return group
+
+            logging.warning("Browser asked for unknown group %s; using root", uuid)
+
+        return SafeGroup.get_root(database_manager)
+
+    async def set_login(
+        self,
+        *,
+        url: str,
+        login: str,
+        password: str,
+        title: str,
+        uuid: str | None = None,
+        group_uuid: str | None = None,
+    ) -> bool:
+        """Create or update a login through the model the UI observes.
+
+        Uses SafeEntry/SafeGroup rather than pykeepass directly so that the
+        visible entry list updates and the safe is marked dirty: both fall out
+        of SafeElement.updated(), which the property setters call.
+        """
+        database_manager = self._database_manager()
+        if database_manager is None:
+            raise RuntimeError("no unlocked database available")
+
+        if uuid:
+            entry = self._find_entry(database_manager, uuid)
+            if entry is None:
+                # The extension sends a UUID it was given earlier, so this means
+                # the entry has since been deleted. Creating a replacement would
+                # resurrect something the user removed, so refuse instead.
+                raise RuntimeError(f"no entry with uuid {uuid}")
+
+            entry.props.username = login
+            entry.props.password = password
+            return False
+
+        group = self._find_group(database_manager, group_uuid)
+        entry = group.new_entry(title, login, password)
+        entry.props.url = url
+        return True
 
     # -- persistence -----------------------------------------------------
 
