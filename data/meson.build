@@ -47,8 +47,18 @@ gnome.compile_resources(
 gschema_conf = configuration_data()
 gschema_conf.set('APP_ID', application_id)
 gschema_conf.set('GETTEXT_PACKAGE', gettext_package)
+# Schemas and enums share one system-wide namespace: every installed
+# .gschema.xml is compiled into a single cache. An untemplated enum id or
+# schema path therefore collides with any other build of this application,
+# and glib-compile-schemas fails with "already specified", breaking the cache
+# for every application on the system rather than just ours.
+gschema_conf.set('APP_PATH', '/' + application_id.replace('.', '/') + '/')
 configure_file(
-  input: '@0@.gschema.xml.in'.format(project_id),
+  # Source filename is literal, as it is for the metainfo and desktop files
+  # above; only the installed name follows application_id. Deriving the input
+  # from project_id would make renaming the application require renaming these
+  # files too, for no benefit.
+  input: 'org.gnome.World.Secrets.gschema.xml.in',
   output: '@0@.gschema.xml'.format(application_id),
   configuration: gschema_conf,
   install: true,
@@ -57,7 +67,7 @@ configure_file(
 
 # Install mimetype file
 install_data(
-  '@0@.xml'.format(project_id),
+  'org.gnome.World.Secrets.xml',
   install_dir: 'share/mime/packages',
   rename: '@0@.xml'.format(application_id),
 )
