@@ -26,6 +26,7 @@ from gettext import gettext as _
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
 
 from gsecrets import config_manager, const
+from gsecrets.safe_watcher import SafeWatcher
 
 if typing.TYPE_CHECKING:
     from gi.repository import Adw
@@ -56,15 +57,38 @@ PIXMAP_SIZE = 64
 TRAY_ICON_BASE = f"{const.APP_ID}-tray"
 
 
-def tray_icon_name() -> str:
-    """The icon name for the currently chosen colour.
+# The colour a locked safe gets, whatever accent is configured. Shipped as one
+# of the palettes in its own right, so nothing extra has to be installed.
+LOCKED_COLOR = "monochrome"
+
+
+def tray_icon_color(unlocked: bool) -> str:
+    """The palette the tray icon takes for this lock state.
+
+    Grey once everything is locked, so the accent colour carries a meaning
+    rather than being decoration: it says there is a safe open right now. That
+    is the same division the browser extension draws with its own locked icon.
+
+    A safe left open is the state worth noticing, which is why it is the one
+    that keeps the colour. Choosing monochrome as the accent collapses the
+    distinction -- both states are then grey, which is the honest consequence of
+    asking for a colourless icon.
+
+    Split from tray_icon_name() so the choice can be checked without a display
+    and an installed icon theme, which is what the name resolution needs.
+    """
+    return config_manager.get_icon_color() if unlocked else LOCKED_COLOR
+
+
+def tray_icon_name(unlocked: bool) -> str:
+    """The icon name for the chosen colour and the current lock state.
 
     Falls back to the unsuffixed icon when the colour names a set this build
     does not ship, which is what happens when the settings schema is newer than
     the installed icons -- an upgrade that replaced one but not the other. An
     icon in the wrong colour beats no icon at all.
     """
-    name = f"{TRAY_ICON_BASE}-{config_manager.get_icon_color()}"
+    name = f"{TRAY_ICON_BASE}-{tray_icon_color(unlocked)}"
 
     display = Gdk.Display.get_default()
     if display is None:
@@ -244,6 +268,10 @@ class TrayIcon:
         self._settings = Gio.Settings.new(const.APP_ID)
         self._color_handler = 0
 
+        # The icon is grey while everything is locked, so it has to be repainted
+        # when that changes and not only when the colour setting does.
+        self._watcher = SafeWatcher(application, self._on_lock_state_changed)
+
         # The documented naming convention. Hosts also accept a unique name, but
         # a well-known one is what every other implementation registers.
         self._bus_name = f"org.kde.StatusNotifierItem-{os.getpid()}-1"
@@ -308,16 +336,25 @@ class TrayIcon:
             self._on_icon_color_changed,
         )
 
+        self._watcher.start()
+
         self._register_with_watcher()
         logging.info("Tray icon published as %s", self._bus_name)
         return True
 
     def _on_icon_color_changed(self, _settings: Gio.Settings, _key: str) -> None:
-        """Repaint the item after the colour setting changes.
+        self._repaint()
+
+    def _on_lock_state_changed(self, _unlocked: bool) -> None:
+        """Repaint when the last safe locks, or the first one opens."""
+        self._repaint()
+
+    def _repaint(self) -> None:
+        """Drop the cached pixels and tell the host to read the icon again.
 
         The pixels are cached, so they have to be dropped before anything is
         announced; a host that reads IconPixmap in response to NewIcon would
-        otherwise be handed the previous colour and cache it as the new one.
+        otherwise be handed the previous icon and cache it as the new one.
         """
         self._pixmap = None
 
@@ -333,6 +370,8 @@ class TrayIcon:
 
     def stop(self) -> None:
         """Withdraw the item. Safe to call when it was never started."""
+        self._watcher.stop()
+
         if self._color_handler:
             self._settings.disconnect(self._color_handler)
             self._color_handler = 0
@@ -390,7 +429,7 @@ class TrayIcon:
 
     def _icon_pixmap(self) -> GLib.Variant:
         if self._pixmap is None:
-            self._pixmap = _load_pixmap(tray_icon_name())
+            self._pixmap = _load_pixmap(tray_icon_name(self._watcher.unlocked))
 
         return GLib.Variant("a(iiay)", self._pixmap)
 
@@ -413,7 +452,7 @@ class TrayIcon:
         if name == "Status":
             return GLib.Variant("s", "Active")
         if name == "IconName":
-            return GLib.Variant("s", tray_icon_name())
+            return GLib.Variant("s", tray_icon_name(self._watcher.unlocked))
         if name == "IconPixmap":
             return self._icon_pixmap()
         if name in ("OverlayIconName", "AttentionIconName"):
@@ -421,7 +460,8 @@ class TrayIcon:
         if name == "ToolTip":
             return GLib.Variant(
                 # First field is an icon name, so it follows the tray icon too.
-                "(sa(iiay)ss)", (tray_icon_name(), [], const.NAME, "")
+                "(sa(iiay)ss)",
+                (tray_icon_name(self._watcher.unlocked), [], const.NAME, ""),
             )
         if name == "ItemIsMenu":
             # False even though a menu is exported: the item is not menu-only,

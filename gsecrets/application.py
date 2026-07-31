@@ -13,6 +13,7 @@ from gsecrets.browser.backend import ApplicationBackend
 from gsecrets.browser.server import BrowserServer
 from gsecrets.password_generator_dialog import PasswordGeneratorDialog
 from gsecrets.recent_manager import RecentManager
+from gsecrets.sleep_lock import SleepLock
 from gsecrets.tray import TrayIcon
 from gsecrets.widgets.mod import load_widgets
 from gsecrets.widgets.window import Window
@@ -39,6 +40,7 @@ class Application(Adw.Application):
         # the server goes away; every other use of it is the server's.
         self._browser_backend: ApplicationBackend | None = None
         self._tray_icon: TrayIcon | None = None
+        self._sleep_lock: SleepLock | None = None
 
         # debug level logging option
         self.add_main_option(
@@ -89,6 +91,15 @@ class Application(Adw.Application):
             self._on_icon_color_changed,
         )
 
+        # Lock open safes before the machine suspends. Neither the inactivity
+        # timer nor locking on session lock covers that; see sleep_lock.
+        self._sleep_lock = SleepLock(self)
+        self.create_asyncio_task(self._sleep_lock.start())
+        self.settings.connect(
+            f"changed::{config_manager.LOCK_ON_SUSPEND}",
+            self._on_lock_on_suspend_changed,
+        )
+
         self.settings.connect(
             f"changed::{config_manager.AUTOSTART}",
             self._on_autostart_changed,
@@ -106,6 +117,10 @@ class Application(Adw.Application):
 
     def _on_autostart_changed(self, _settings: Gio.Settings, _key: str) -> None:
         autostart.set_enabled(config_manager.get_autostart())
+
+    def _on_lock_on_suspend_changed(self, _settings: Gio.Settings, _key: str) -> None:
+        if sleep_lock := self._sleep_lock:
+            self.create_asyncio_task(sleep_lock.sync_inhibitor())
 
     def _on_run_in_background_changed(
         self, _settings: Gio.Settings, _key: str
@@ -126,6 +141,13 @@ class Application(Adw.Application):
         if tray := self._tray_icon:
             self._tray_icon = None
             tray.stop()
+
+        if sleep_lock := self._sleep_lock:
+            # Synchronous for the same reason the browser server's close() is:
+            # the event loop is already being torn down, so a task scheduled
+            # here would never run, and the inhibitor would outlive the process.
+            self._sleep_lock = None
+            sleep_lock.stop()
 
         if server := self._browser_server:
             # Synchronous by necessity: an asyncio task scheduled here never

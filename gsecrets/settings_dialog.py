@@ -134,6 +134,9 @@ class SettingsDialog(Adw.PreferencesDialog):
         lock_on_session_lock = settings.create_action("lock-on-session-lock")
         action_group.add_action(lock_on_session_lock)
 
+        lock_on_suspend = settings.create_action("lock-on-suspend")
+        action_group.add_action(lock_on_suspend)
+
         remember_composite_key_action = settings.create_action("remember-composite-key")
         action_group.add_action(remember_composite_key_action)
         remember_composite_key_action.connect(

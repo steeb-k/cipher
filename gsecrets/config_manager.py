@@ -31,6 +31,7 @@ GENERATOR_LENGTH = "generator-length"
 GENERATOR_WORDS = "generator-words"
 GENERATOR_SEPARATOR = "generator-separator"
 LOCK_ON_SESSION_LOCK = "lock-on-session-lock"
+LOCK_ON_SUSPEND = "lock-on-suspend"
 FINGERPRINT_QUICK_UNLOCK = "fingerprint-quick-unlock"
 BROWSER_INTEGRATION = "browser-integration"
 AUTOSTART = "autostart"
@@ -43,6 +44,10 @@ ICON_COLOR = "icon-color"
 
 def get_lock_on_session_lock() -> bool:
     return setting.get_boolean(LOCK_ON_SESSION_LOCK)
+
+
+def get_lock_on_suspend() -> bool:
+    return setting.get_boolean(LOCK_ON_SUSPEND)
 
 
 def get_generator_use_uppercase() -> bool:

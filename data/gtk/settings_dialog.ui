@@ -224,6 +224,14 @@
               </object>
             </child>
             <child>
+              <object class="AdwSwitchRow" id="_lock_on_suspend_row">
+                <property name="title" translatable="yes">Lock on S_uspend</property>
+                <property name="subtitle" translatable="yes">Automatically lock before the system suspends or hibernates.</property>
+                <property name="use-underline">True</property>
+                <property name="action-name">settings.lock-on-suspend</property>
+              </object>
+            </child>
+            <child>
               <object class="AdwSpinRow" id="_clearcb_spin_row">
                 <property name="title" translatable="yes">Clear Clipboard</property>
                 <property name="subtitle" translatable="yes">Clear clipboard after X seconds.</property>
