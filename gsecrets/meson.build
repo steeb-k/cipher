@@ -29,7 +29,7 @@ main_conf = configuration_data()
 main_conf.set('PYTHON', python_bin.full_path())
 configure_file(
   input: 'main.py.in',
-  output: 'secrets',
+  output: binary_name,
   configuration: conf,
   install_dir: bindir,
   install: true,

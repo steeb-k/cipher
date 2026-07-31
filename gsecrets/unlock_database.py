@@ -62,8 +62,12 @@ class UnlockDatabase(Adw.Bin):
                 filepath,
             )
 
-        if gsecrets.const.IS_DEVEL:
-            self.status_page.props.icon_name = gsecrets.const.APP_ID
+        # Always, not only for development builds. The template cannot name the
+        # icon itself because .ui files are not templated with the application
+        # ID, and the literal it used to carry -- org.gnome.World.Secrets --
+        # still resolves on any machine with upstream Secrets installed, so this
+        # screen quietly displayed a different application's logo.
+        self.status_page.props.icon_name = gsecrets.const.APP_ID
 
         self.fprint: FingerprintVerifier | None = None
         self.fprint_tries = 0
@@ -74,6 +78,7 @@ class UnlockDatabase(Adw.Bin):
 
         self.event_controller = Gtk.EventControllerFocus.new()
         self.add_controller(self.event_controller)
+        self._focus_controller_attached = True
         self.event_controller.connect("enter", self.on_enter)
         self.event_controller.connect("leave", self.on_leave)
 
@@ -90,10 +95,43 @@ class UnlockDatabase(Adw.Bin):
                 widget = key_provider.create_unlock_widget(self.database_manager)
                 self.provider_group.add(widget)
 
+    def do_map(self):  # pylint: disable=arguments-differ
+        Gtk.Widget.do_map(self)
+        # do_unmap() tears this view down. Upstream that is the end of its life,
+        # because closing the window quits the application. With the
+        # run-in-background setting the window is only hidden and this same
+        # instance is mapped again on reopen, so __init__ does not run and
+        # anything undone there has to be put back explicitly.
+        if not self._focus_controller_attached:
+            self.add_controller(self.event_controller)
+            self._focus_controller_attached = True
+
+        # Reset the retry budget per appearance rather than per instance.
+        # Otherwise it accumulates across reopens until fingerprint unlock is
+        # refused outright, with no way back short of restarting.
+        self.fprint_tries = 0
+
+        if self.fprint is None and gsecrets.config_manager.get_fingerprint_quick_unlock():
+            self._map_fingerprint_reader()
+
+        # Arming the reader is otherwise driven by focus entering this view,
+        # which showing the window again does not do -- leaving the sensor dead
+        # until the user clicks into the password field. Arm it here on exactly
+        # the terms on_enter() uses, so a safe that was unlocked earlier in this
+        # run can be reopened with a finger straight away.
+        if (
+            self.database_manager
+            and self.database_manager.password != ""
+            and self.fprint_tries < self.FPRINT_MAX_TRIES
+        ):
+            self._start_fingerprint_reader()
+
     def do_unmap(self):  # pylint: disable=arguments-differ
         Gtk.Widget.do_unmap(self)
         self._progress.end_pulse()
-        self.remove_controller(self.event_controller)
+        if self._focus_controller_attached:
+            self.remove_controller(self.event_controller)
+            self._focus_controller_attached = False
         self._unmap_fingerprint_reader()
 
     def on_enter(self, _user_data):
@@ -346,14 +384,20 @@ class UnlockDatabase(Adw.Bin):
             return
         self.fprint.connect(self._start_fingerprint_reader_cb)
 
-    def _stop_fingerprint_reader(self) -> None:
-        if not self.fprint:
+    def _stop_fingerprint_reader(
+        self, verifier: FingerprintVerifier | None = None
+    ) -> None:
+        # The verifier is taken as an argument so callers that are about to drop
+        # their reference can hand it over. Reading self.fprint inside the task
+        # instead would see whatever the attribute holds by the time the task
+        # runs, not what it held when the stop was requested.
+        verifier = verifier or self.fprint
+        if not verifier:
             return
 
         async def disconnect():
-            if fprint := self.fprint:
-                await fprint.verify_stop()
-                fprint.disconnect()
+            await verifier.verify_stop()
+            verifier.disconnect()
 
             self.fingerprint_img.props.visible = False
 
@@ -375,8 +419,14 @@ class UnlockDatabase(Adw.Bin):
         if not self.fprint:
             return
         logging.debug("Disconnecting the fingerprint device...")
-        self._stop_fingerprint_reader()
-        self.fprint = None
+        # Clear the attribute first, then hand the verifier to the stop task.
+        # Doing it the other way round loses the race: the assignment runs
+        # immediately while the task runs later, so the task would find None
+        # and skip the release, leaving fprintd holding the claim for the rest
+        # of the process's life -- which, running in the background, is a long
+        # time. Every later Claim then fails with AlreadyInUse.
+        verifier, self.fprint = self.fprint, None
+        self._stop_fingerprint_reader(verifier)
 
     def _on_fingerprint_success(self):
         """Success callback of the the FingerprintVerifier."""
@@ -402,8 +452,18 @@ class UnlockDatabase(Adw.Bin):
         """Failure callback of the the FingerprintVerifier."""
         self.fprint_tries += 1
 
+        # Captured now rather than read inside the task. Hiding the window
+        # unmaps this view and sets self.fprint to None, and a retry scheduled
+        # just before that would otherwise dereference it and die with an
+        # unretrieved AttributeError.
+        verifier = self.fprint
+
         async def start_fprint():
-            status = await self.fprint.verify_start()
+            if verifier is None or verifier is not self.fprint:
+                logging.debug("Fingerprint reader went away; abandoning retry")
+                return
+
+            status = await verifier.verify_start()
             if not status:
                 # in case fingerprint sensor itself refuses
                 self.fingerprint_img.add_css_class("error")

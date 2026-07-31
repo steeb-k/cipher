@@ -10,7 +10,7 @@
             <property name="icon-name">go-previous-symbolic</property>
             <property name="tooltip-text" translatable="yes">Go Back</property>
           </object>
-        </child>"
+        </child>
         <child>
           <object class="GtkMenuButton">
             <property name="menu-model">_add_button_menu</property>
@@ -91,6 +91,10 @@
     </section>
     <section>
       <item>
+        <attribute name='label' translatable='yes'>Password _Generator</attribute>
+        <attribute name='action'>app.password_generator</attribute>
+      </item>
+      <item>
         <attribute name='label' translatable='yes'>_Preferences</attribute>
         <attribute name='action'>win.settings</attribute>
       </item>
@@ -99,8 +103,14 @@
         <attribute name='action'>app.shortcuts</attribute>
       </item>
       <item>
-        <attribute name='label' translatable='yes' comments="&quot;Secrets&quot; is the application name, do not translate">_About Secrets</attribute>
+        <attribute name='label' translatable='yes' comments="&quot;Cipher&quot; is the application name, do not translate">_About Cipher</attribute>
         <attribute name='action'>win.about</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name='label' translatable='yes'>_Quit</attribute>
+        <attribute name='action'>app.quit</attribute>
       </item>
     </section>
   </menu>

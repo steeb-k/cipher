@@ -55,6 +55,33 @@ image.colored {
   --accent-fg-color: white;
 }
 
+/* Icon colours only; no entry label is pink. Spelled out rather than taken from
+   the libadwaita palette because that palette has no pink -- this is the brand
+   colour, the same value the icons themselves are drawn in.
+
+   Deliberately absent from the dark-scheme block below: the others shift a
+   shade there, but a tray icon is a fixed file that cannot, and this swatch is
+   meant to show the colour the icon will actually be. */
+.pink {
+  --accent-bg-color: #ff67ef;
+  --accent-fg-color: rgb(0 0 0 / 80%);
+}
+
+/* Monochrome is not a colour, it is whichever of black and white the
+   surroundings call for, so the swatch shows both halves rather than picking
+   one. It previously borrowed the colourless swatch from the entry palette,
+   which drew a grey circle and so claimed the icon would be grey -- it never
+   is. The two values are the ones the icons are actually drawn in.
+
+   The checkmark is white and carries a shadow because it sits across the
+   diagonal: nothing is legible on both halves unaided. */
+button.colored.monochrome {
+  background-image: linear-gradient(135deg, #fcfcfc 0 50%, #0f0f0d 50% 100%);
+  --accent-bg-color: #767676;
+  --accent-fg-color: #fcfcfc;
+  -gtk-icon-shadow: 0 0 3px rgb(0 0 0 / 90%);
+}
+
 @media (prefers-color-scheme: dark) {
   .blue {
     --accent-bg-color: var(--blue-5);

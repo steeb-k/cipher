@@ -33,8 +33,12 @@ GENERATOR_SEPARATOR = "generator-separator"
 LOCK_ON_SESSION_LOCK = "lock-on-session-lock"
 FINGERPRINT_QUICK_UNLOCK = "fingerprint-quick-unlock"
 BROWSER_INTEGRATION = "browser-integration"
+AUTOSTART = "autostart"
 RUN_IN_BACKGROUND = "run-in-background"
+MINIMIZE_AFTER_UNLOCK = "minimize-after-unlock"
+START_MINIMIZED = "start-minimized"
 QUICK_UNLOCK = "quick-unlock"
+ICON_COLOR = "icon-color"
 
 
 def get_lock_on_session_lock() -> bool:
@@ -219,12 +223,48 @@ def set_browser_integration(value: bool) -> None:
     setting.set_boolean(BROWSER_INTEGRATION, value)
 
 
+def get_autostart() -> bool:
+    return setting.get_boolean(AUTOSTART)
+
+
+def set_autostart(value: bool) -> None:
+    setting.set_boolean(AUTOSTART, value)
+
+
 def get_run_in_background() -> bool:
     return setting.get_boolean(RUN_IN_BACKGROUND)
 
 
 def set_run_in_background(value: bool) -> None:
     setting.set_boolean(RUN_IN_BACKGROUND, value)
+
+
+def get_minimize_after_unlock() -> bool:
+    return setting.get_boolean(MINIMIZE_AFTER_UNLOCK)
+
+
+def set_minimize_after_unlock(value: bool) -> None:
+    setting.set_boolean(MINIMIZE_AFTER_UNLOCK, value)
+
+
+def get_start_minimized() -> bool:
+    return setting.get_boolean(START_MINIMIZED)
+
+
+def set_start_minimized(value: bool) -> None:
+    setting.set_boolean(START_MINIMIZED, value)
+
+
+def get_icon_color() -> str:
+    """The chosen colour as its nick, e.g. "blue"."""
+    # get_string rather than get_enum: an enum key is a string underneath, and
+    # the nick is what both the icon filename and the extension want. get_enum
+    # would only mean converting the index straight back again.
+    return setting.get_string(ICON_COLOR)
+
+
+def set_icon_color(value: str) -> None:
+    setting.set_string(ICON_COLOR, value)
 
 
 def get_quick_unlock():

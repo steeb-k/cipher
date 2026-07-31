@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import itertools
 import os
 import shutil
 import subprocess
@@ -89,10 +90,47 @@ def check(name: str, condition: bool, detail: str = "") -> None:
     print(f"  [{mark}] {name}" + (f" -- {detail}" if detail and not condition else ""))
 
 
-class StubWindow:
+class StubSignals:
+    """Records connections the way a GObject would accept them.
+
+    The backend watches windows for notify::unlocked-db and the application for
+    window-added/window-removed. Nothing here emits them -- the checks drive
+    state directly -- but they have to be connectable, and emit() lets a check
+    stand in for the application when it wants to.
+    """
+
+    _ids = itertools.count(1)
+
+    def __init__(self) -> None:
+        self._handlers: dict[str, list] = {}
+
+    def connect(self, signal, handler):
+        handler_id = next(self._ids)
+        self._handlers.setdefault(signal, []).append((handler_id, handler))
+        return handler_id
+
+    def disconnect(self, handler_id) -> None:
+        for signal, handlers in self._handlers.items():
+            self._handlers[signal] = [h for h in handlers if h[0] != handler_id]
+
+    def connected(self) -> int:
+        return sum(len(handlers) for handlers in self._handlers.values())
+
+    def emit(self, signal, *args) -> None:
+        for _handler_id, handler in list(self._handlers.get(signal, [])):
+            handler(self, *args)
+
+
+class StubWindow(StubSignals):
     def __init__(self, unlocked_db, presented=None) -> None:
+        super().__init__()
         self.unlocked_db = unlocked_db
         self._presented = presented if presented is not None else []
+
+    def set_unlocked_db(self, unlocked_db) -> None:
+        """Assign the safe and notify, as the real GObject property does."""
+        self.unlocked_db = unlocked_db
+        self.emit("notify::unlocked-db", None)
 
     def present(self) -> None:
         self._presented.append("present")
@@ -103,15 +141,24 @@ class StubUnlockedDatabase:
         self.database_manager = database_manager
 
 
-class StubApplication:
+class StubApplication(StubSignals):
     """Stands in for Gio.Application, exposing only what the backend uses."""
 
     def __init__(self, windows) -> None:
+        super().__init__()
         self._windows = windows
         self.presented: list[str] = []
 
     def get_windows(self):
         return self._windows
+
+    def add_window(self, window) -> None:
+        self._windows.append(window)
+        self.emit("window-added", window)
+
+    def remove_window(self, window) -> None:
+        self._windows.remove(window)
+        self.emit("window-removed", window)
 
     def get_active_window(self):
         window = self._windows[0] if self._windows else None
@@ -260,8 +307,9 @@ async def run_checks(tmpdir: Path) -> None:
     signals: list[str] = []
     backend.on_state_change = signals.append
 
-    # The listener attaches lazily, from _database_manager(); nothing has
-    # happened yet that would have discovered this manager.
+    # This window was already holding the safe when the backend was built, so
+    # notify::unlocked-db has been and gone; _database_manager() is the path
+    # that picks it up.
     backend.get_database()
 
     check("safe starts unlocked", manager.props.locked is False)
@@ -292,6 +340,53 @@ async def run_checks(tmpdir: Path) -> None:
     await backend.lock()
     check("relocking signals again",
           signals[-1] == "database-locked", f"got {signals}")
+
+    print("\nAn unlock with no request behind it is still reported")
+    # The gap the old opportunistic watcher left. Nothing has asked the backend
+    # anything, so nothing would have discovered this safe, and the browser
+    # would have gone on showing a locked icon over a safe it could read.
+    app = backend._application  # noqa: SLF001
+    second_window = StubWindow(None, presented=app.presented)
+    before = len(signals)
+    app.add_window(second_window)
+    check("an added window with no safe in it says nothing",
+          len(signals) == before, f"got {signals[before:]}")
+
+    second_path = tmpdir / "second.kdbx"
+    create_database(str(second_path), password="pw").save()
+    second = build_manager(second_path, "pw")
+    second_window.set_unlocked_db(StubUnlockedDatabase(second))
+    check("unlocking a safe emits database-unlocked without a request first",
+          signals[-1] == "database-unlocked" and len(signals) == before + 1,
+          f"got {signals[before:]}")
+
+    print("\nState is aggregated over windows, not reported per safe")
+    before = len(signals)
+    manager.props.locked = False
+    check("a second safe unlocking is not news; one was already reachable",
+          len(signals) == before, f"got {signals[before:]}")
+
+    second.props.locked = True
+    check("one safe locking while another stays open is not a lock",
+          len(signals) == before, f"got {signals[before:]}")
+
+    manager.props.locked = True
+    check("the last safe locking is",
+          signals[-1] == "database-locked" and len(signals) == before + 1,
+          f"got {signals[before:]}")
+
+    print("\nClosing a window takes its safe with it")
+    second.props.locked = False
+    check("reopening reports unlocked", signals[-1] == "database-unlocked",
+          f"got {signals}")
+
+    before = len(signals)
+    app.remove_window(second_window)
+    check("closing the only window holding an unlocked safe reports locked",
+          signals[-1] == "database-locked" and len(signals) == before + 1,
+          f"got {signals[before:]}")
+    check("and the safe is genuinely no longer reachable",
+          backend.get_database() is None)
 
     print("\nPassword generation follows the application's settings")
     from gsecrets import config_manager
@@ -343,6 +438,21 @@ async def run_checks(tmpdir: Path) -> None:
     await backend.request_unlock()
     check("a request after the interval is honoured again",
           presented == ["present", "present"], f"got {presented}")
+
+    print("\nSwitching browser integration off detaches everything")
+    check("the application is being listened to", app.connected() > 0)
+    backend.stop_watching()
+    check("no listeners are left on the application", app.connected() == 0)
+    check("none on its windows either",
+          all(w.connected() == 0 for w in app.get_windows()))
+
+    before = len(signals)
+    backend.on_state_change = signals.append
+    manager.props.locked = False
+    check("a detached backend reports nothing",
+          len(signals) == before, f"got {signals[before:]}")
+    manager.props.locked = True
+    backend.on_state_change = None
 
     print("\nWrites are refused once locked")
     for description, call in (

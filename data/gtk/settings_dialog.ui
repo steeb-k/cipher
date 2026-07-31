@@ -19,13 +19,40 @@
             </child>
             <child>
               <object class="AdwSwitchRow">
+                <property name="title" translatable="yes">Start at _Login</property>
+                <property name="subtitle" translatable="yes">Launch automatically when you log in.</property>
+                <property name="action-name">settings.autostart</property>
+                <property name="use-underline">True</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow">
                 <property name="title" translatable="yes">_Run in the Background</property>
                 <property name="subtitle" translatable="yes">Closing the window hides it instead of quitting. The safe keeps its state and still locks on schedule.</property>
                 <property name="action-name">settings.run-in-background</property>
                 <property name="use-underline">True</property>
               </object>
             </child>
+            <child>
+              <object class="AdwSwitchRow" id="_start_minimized_row">
+                <property name="title" translatable="yes">Start Minimized to _Tray</property>
+                <property name="subtitle" translatable="yes">Launch without a window, waiting in the tray. Requires running in the background.</property>
+                <property name="action-name">settings.start-minimized</property>
+                <property name="use-underline">True</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="_minimize_after_unlock_row">
+                <property name="title" translatable="yes">_Minimize to Tray After Unlock</property>
+                <property name="subtitle" translatable="yes">Hide the window once a safe is unlocked. Requires running in the background.</property>
+                <property name="action-name">settings.minimize-after-unlock</property>
+                <property name="use-underline">True</property>
+              </object>
+            </child>
           </object>
+        </child>
+        <child>
+          <object class="IconColorRow"/>
         </child>
         <child>
           <object class="AdwPreferencesGroup" id="section_browser">

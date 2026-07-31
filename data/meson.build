@@ -74,6 +74,8 @@ install_data(
 
 desktop_conf = configuration_data()
 desktop_conf.set('ICON', application_id)
+desktop_conf.set('NAME', project_name)
+desktop_conf.set('BINARY', binary_name)
 desktop = i18n.merge_file(
   input: configure_file(
     input: files('org.gnome.World.Secrets.desktop.in.in'),

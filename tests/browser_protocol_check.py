@@ -78,6 +78,7 @@ class FakeBackend:
         self.approve = True
         self.saved = 0
         self.locked = False
+        self.icon_colour = "pink"
         # Awaited directly here. The application cannot: its notification comes
         # from a GObject property change, so it schedules a task instead.
         self.on_state_change = None
@@ -85,6 +86,10 @@ class FakeBackend:
 
     def get_database(self):
         return self.db
+
+    def icon_color(self) -> str:
+        """Carried in the handshake, so the toolbar icon matches the tray."""
+        return self.icon_colour
 
     async def request_unlock(self) -> None:
         self.unlock_requests += 1

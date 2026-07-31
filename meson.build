@@ -1,6 +1,6 @@
 project(
   'secrets',
-  version: '13.0.1',
+  version: '0.9.0',
   meson_version: '>= 1.7',
   license: 'GPL-3.0-only',
 )
@@ -10,6 +10,9 @@ gnome = import('gnome')
 
 project_id = 'io.github.steeb_k.Cipher'
 project_name = 'Cipher'
+# Executable name. Referenced by gsecrets/meson.build and the desktop entry,
+# so the two can never disagree about what to launch.
+binary_name = 'cipher'
 
 message('Looking for dependencies')
 # We need pykeepass>=4.1.1 and pyotp>=2.4.0.

@@ -8,9 +8,10 @@ from gettext import gettext as _
 from gi.events import GLibEventLoopPolicy
 from gi.repository import Adw, Gio, GLib, Gtk, GtkSource
 
-from gsecrets import config_manager, const
+from gsecrets import autostart, config_manager, const
 from gsecrets.browser.backend import ApplicationBackend
 from gsecrets.browser.server import BrowserServer
+from gsecrets.password_generator_dialog import PasswordGeneratorDialog
 from gsecrets.recent_manager import RecentManager
 from gsecrets.tray import TrayIcon
 from gsecrets.widgets.mod import load_widgets
@@ -34,6 +35,9 @@ class Application(Adw.Application):
         asyncio.set_event_loop_policy(GLibEventLoopPolicy())
 
         self._browser_server: BrowserServer | None = None
+        # Held alongside the server only so its listeners can be taken off when
+        # the server goes away; every other use of it is the server's.
+        self._browser_backend: ApplicationBackend | None = None
         self._tray_icon: TrayIcon | None = None
 
         # debug level logging option
@@ -77,6 +81,32 @@ class Application(Adw.Application):
         )
         self._update_tray_icon()
 
+        # The extension is told the colour during the handshake, so a browser
+        # that connects later needs nothing here; this is only for the one
+        # already connected when the setting changes.
+        self.settings.connect(
+            f"changed::{config_manager.ICON_COLOR}",
+            self._on_icon_color_changed,
+        )
+
+        self.settings.connect(
+            f"changed::{config_manager.AUTOSTART}",
+            self._on_autostart_changed,
+        )
+        # Reconcile on every start: the desktop entry is a file the user can
+        # delete from their own autostart settings, and the setting would then
+        # disagree with reality until it was toggled.
+        autostart.set_enabled(config_manager.get_autostart())
+
+    def _on_icon_color_changed(self, _settings: Gio.Settings, _key: str) -> None:
+        if server := self._browser_server:
+            self.create_asyncio_task(
+                server.broadcast("icon-color", value=config_manager.get_icon_color())
+            )
+
+    def _on_autostart_changed(self, _settings: Gio.Settings, _key: str) -> None:
+        autostart.set_enabled(config_manager.get_autostart())
+
     def _on_run_in_background_changed(
         self, _settings: Gio.Settings, _key: str
     ) -> None:
@@ -102,6 +132,7 @@ class Application(Adw.Application):
             # runs, because the event loop is already being torn down, and the
             # socket would survive the process.
             self._browser_server = None
+            self._stop_watching_databases()
             server.close()
 
         Adw.Application.do_shutdown(self)
@@ -115,7 +146,13 @@ class Application(Adw.Application):
             self.create_asyncio_task(self._start_browser_server())
         elif not enabled and (server := self._browser_server):
             self._browser_server = None
+            self._stop_watching_databases()
             self.create_asyncio_task(server.stop())
+
+    def _stop_watching_databases(self) -> None:
+        if backend := self._browser_backend:
+            self._browser_backend = None
+            backend.stop_watching()
 
     async def _start_browser_server(self) -> None:
         if self._browser_server is not None:
@@ -139,9 +176,11 @@ class Application(Adw.Application):
             # carry on: failing to serve a browser must not stop the safe from
             # being usable.
             logging.warning("Could not start browser integration: %s", err)
+            backend.stop_watching()
             return
 
         self._browser_server = server
+        self._browser_backend = backend
 
     def do_open(self, gfile_list, _n_files, _hint):  # pylint: disable=arguments-differ
         for gfile in gfile_list:
@@ -220,12 +259,35 @@ class Application(Adw.Application):
 
         window = self.new_window()
         window.invoke_initial_screen()
+
+        # Only the first activation of the process reaches this point -- every
+        # later one returns above with an existing window -- so starting
+        # minimized cannot swallow a deliberate request to open the window,
+        # whether that comes from the tray or from launching the app again.
+        #
+        # Gated on run-in-background at runtime as well as in preferences: the
+        # tray icon follows that setting, so without it there would be no window
+        # and nothing to summon one with. The window is still created, just not
+        # presented, which is what keeps the application from quitting.
+        if (
+            config_manager.get_start_minimized()
+            and config_manager.get_run_in_background()
+        ):
+            logging.debug("Starting minimized to the tray")
+            return
+
         window.present()
 
     def setup_actions(self):
         quit_action = Gio.SimpleAction.new("quit", None)
         quit_action.connect("activate", self.on_quit_action)
         self.add_action(quit_action)
+
+        # An application action rather than a window one: the generator needs
+        # no safe, so it is offered whether or not anything is unlocked.
+        password_generator_action = Gio.SimpleAction.new("password_generator", None)
+        password_generator_action.connect("activate", self.on_password_generator_action)
+        self.add_action(password_generator_action)
 
         new_window_action = Gio.SimpleAction.new("new-window", None)
         new_window_action.connect("activate", self.on_new_window_action)
@@ -236,6 +298,14 @@ class Application(Adw.Application):
             # Not close(): with running in the background enabled that would be
             # taken as a request to hide, leaving no way to quit.
             window.close_for_quit()
+
+    def on_password_generator_action(
+        self,
+        _action: Gio.Action,
+        _param: GLib.Variant,
+    ) -> None:
+        if window := self.get_active_window():
+            PasswordGeneratorDialog().present(window)
 
     def on_new_window_action(self, _action: Gio.Action, _param: GLib.Variant) -> None:
         window = self.new_window()

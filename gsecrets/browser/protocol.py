@@ -79,6 +79,15 @@ class Backend(Protocol):
         set_login.
         """
 
+    def icon_color(self) -> str:
+        """The user's chosen icon colour, as one of the palette nicks.
+
+        Backend-owned for the same reason as generate_password: it is a
+        GSettings value, and this module must not require the schema.
+        Synchronous because it is read while building the handshake reply, which
+        has no reason to wait on anything.
+        """
+
     async def generate_password(self) -> str:
         """Generate a password using the application's own generator settings.
 
@@ -275,6 +284,12 @@ class RequestHandler:
             "publicKey": host_key,
             "nonce": crypto.b64encode(response_nonce),
             "success": "true",
+            # An extension to the protocol, not part of it upstream. The
+            # handshake is the cheapest place to put it: every connection begins
+            # with one, so the extension learns the colour without a request of
+            # its own, and an implementation that does not know the field simply
+            # ignores it. Later changes arrive as an icon-color signal.
+            "iconColor": self._backend.icon_color(),
         }
 
     async def _get_databasehash(

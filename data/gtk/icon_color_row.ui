@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="IconColorRow" parent="AdwPreferencesGroup">
+    <property name="title" translatable="yes">Icon Color</property>
+    <property name="description" translatable="yes">Color of the tray icon and of the browser extension's toolbar icon. A locked safe stays grey either way.</property>
+    <child>
+      <object class="GtkFlowBox" id="_flowbox">
+        <property name="min-children-per-line">4</property>
+        <property name="max-children-per-line">8</property>
+        <property name="row-spacing">12</property>
+        <property name="column-spacing">6</property>
+        <property name="selection-mode">none</property>
+        <accessibility>
+          <relation name="labelled-by">IconColorRow</relation>
+        </accessibility>
+      </object>
+    </child>
+  </template>
+</interface>

@@ -159,13 +159,17 @@ class BrowserServer:
             self._connections.discard(writer)
             writer.close()
 
-    async def broadcast(self, action: str) -> int:
+    async def broadcast(self, action: str, **fields: str) -> int:
         """Push an unsolicited signal to every connected client.
 
         Signals are plaintext: the extension's onNativeMessage() dispatches on
         response.action alone, before any decryption, and they carry no secret
         beyond the fact that the state changed. That also avoids the question of
         which client's session key to encrypt an unsolicited message with.
+
+        `fields` are merged into the message, for signals that carry a value
+        rather than only news that something happened. Nothing that is not
+        already public should go in one, for the reason above.
 
         Best-effort by design. A client that has gone away must not stop the
         others from being told, and cannot be allowed to propagate an error into
@@ -174,7 +178,7 @@ class BrowserServer:
         if not self._connections:
             return 0
 
-        payload = json.dumps({"action": action}).encode("utf-8")
+        payload = json.dumps({"action": action, **fields}).encode("utf-8")
         delivered = 0
 
         for writer in list(self._connections):

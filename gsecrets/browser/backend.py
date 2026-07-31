@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import typing
+import weakref
 from gettext import gettext as _
 
 from gi.repository import Adw, Gio, GLib, Gtk
@@ -40,12 +41,28 @@ class ApplicationBackend:
         # whoever owns the server, since the backend is built first.
         self.on_state_change: Callable[[str], None] | None = None
 
-        # DatabaseManagers already being watched, by id(). A plain set would
-        # keep them alive, and identity is enough because the only question is
-        # whether notify::locked is already connected.
-        self._watched: set[int] = set()
+        # Windows and DatabaseManagers already connected to, mapped to the
+        # handler that was attached, so a second pass does not add a duplicate
+        # listener and stop_watching() can take them all off again. Weak keys,
+        # for two reasons: watching something must not keep it alive, and an
+        # entry that outlived its object would be a hazard -- the id()-keyed set
+        # this replaces could match a later object allocated at the same address
+        # and then never watch it at all.
+        self._watched_windows: weakref.WeakKeyDictionary = (
+            weakref.WeakKeyDictionary()
+        )
+        self._watched_managers: weakref.WeakKeyDictionary = (
+            weakref.WeakKeyDictionary()
+        )
+        self._application_handlers: list[int] = []
+
+        # The last state reported, so that a change which does not alter the
+        # answer is not announced as news. None until the first observation.
+        self._unlocked: bool | None = None
 
         self._last_unlock_request = 0
+
+        self._watch_application()
 
     # -- database access -------------------------------------------------
 
@@ -60,37 +77,129 @@ class ApplicationBackend:
             if database_manager is not None:
                 yield database_manager
 
+    # -- state watching --------------------------------------------------
+
+    def _watch_application(self) -> None:
+        """Follow windows as they appear and disappear.
+
+        This used to be done opportunistically, from _database_manager(), which
+        meant state was only ever discovered while answering a request. That is
+        backwards: the whole point of the signal is to spare the browser from
+        having to ask. It also missed the first unlock outright, since nothing
+        could have discovered the manager beforehand, and missed a lock
+        entirely if the browser had connected without yet sending anything.
+        """
+        for signal, handler in (
+            ("window-added", self._on_window_added),
+            ("window-removed", self._on_window_removed),
+        ):
+            self._application_handlers.append(
+                self._application.connect(signal, handler)
+            )
+
+        # Windows that already exist; window-added has been and gone for these.
+        for window in self._application.get_windows():
+            self._watch_window(window)
+
+        # Record the starting point without announcing it. Nothing is listening
+        # yet -- on_state_change is assigned by the server's owner after this
+        # returns -- and a browser that connects later is told the state by the
+        # handshake anyway.
+        self._refresh_state()
+
+    def _watch_window(self, window: Gtk.Window) -> None:
+        """Watch a window for a safe being unlocked in it."""
+        if window in self._watched_windows:
+            return
+
+        self._watched_windows[window] = window.connect(
+            "notify::unlocked-db", self._on_unlocked_db_changed
+        )
+
+    def _on_window_added(self, _application: Gio.Application, window: Gtk.Window):
+        self._watch_window(window)
+        # Ordinarily a new window has no safe in it yet and this finds nothing,
+        # but a window is not required to arrive empty.
+        self._watch_managers()
+        self._refresh_state()
+
+    def _on_window_removed(self, _application: Gio.Application, _window: Gtk.Window):
+        # A window closing takes its safe with it, so the browser can no longer
+        # reach what it could a moment ago.
+        self._refresh_state()
+
+    def _on_unlocked_db_changed(self, _window: Gtk.Window, _pspec: object) -> None:
+        self._watch_managers()
+        self._refresh_state()
+
     def _watch_managers(self) -> None:
         """Attach a lock-state listener to any manager not yet watched.
 
-        There is no signal for "a database appeared" -- window.unlocked_db is a
-        plain attribute, assigned in one place in unlock_database.py -- so this
-        is done opportunistically from _database_manager(), which runs on every
-        request. Managers are watched whether locked or not, so that a later
-        unlock is reported too.
+        Managers are watched whether locked or not, so that both directions are
+        reported: a safe locked from Cipher's own interface, and one unlocked
+        again by password, quick unlock or fingerprint.
 
-        The gap this leaves is the very first unlock, which happens before any
-        request could have discovered the manager. That is the least valuable
-        signal: the browser learns the safe is open from its own polling, and
-        nothing is waiting on it. Locking is the case that matters, and it is
-        covered, since a request always precedes it.
+        Still called from _database_manager() as well as from the window
+        watcher, which costs nothing and covers a manager that was already in
+        place before this backend existed -- browser integration can be
+        switched on at any time, including with a safe already open.
         """
         for database_manager in self._iter_managers():
-            key = id(database_manager)
-            if key in self._watched:
+            if database_manager in self._watched_managers:
                 continue
 
-            self._watched.add(key)
-            database_manager.connect("notify::locked", self._on_locked_changed)
+            self._watched_managers[database_manager] = database_manager.connect(
+                "notify::locked", self._on_locked_changed
+            )
+
+    def stop_watching(self) -> None:
+        """Take every listener back off again.
+
+        Switching browser integration off and on builds a fresh backend, but the
+        application and its windows outlive both. Left connected, the old
+        backend stays alive on the strength of its own signal connections and
+        goes on recomputing state for a server that has stopped.
+        """
+        for handler_id in self._application_handlers:
+            self._application.disconnect(handler_id)
+        self._application_handlers.clear()
+
+        for watched in (self._watched_windows, self._watched_managers):
+            for obj, handler_id in list(watched.items()):
+                obj.disconnect(handler_id)
+            watched.clear()
+
+        self.on_state_change = None
 
     def _on_locked_changed(
-        self, database_manager: DatabaseManager, _pspec: object
+        self, _database_manager: DatabaseManager, _pspec: object
     ) -> None:
+        self._refresh_state()
+
+    def _refresh_state(self) -> None:
+        """Report the safe's state, but only when it has actually changed.
+
+        Aggregated over every window rather than reported per manager: with two
+        windows open the browser can still reach an unlocked safe after one of
+        them locks, and saying otherwise would have it show a locked icon over a
+        safe it can read. Deduplicating here also means the several paths into
+        this method -- a lock, a window closing, a safe being swapped for
+        another -- cannot between them announce the same state twice.
+        """
+        unlocked = any(
+            not database_manager.props.locked and database_manager.db is not None
+            for database_manager in self._iter_managers()
+        )
+
+        if unlocked == self._unlocked:
+            return
+
+        self._unlocked = unlocked
+
         if self.on_state_change is None:
             return
 
-        locked = database_manager.props.locked
-        self.on_state_change("database-locked" if locked else "database-unlocked")
+        self.on_state_change("database-unlocked" if unlocked else "database-locked")
 
     def _database_manager(self) -> DatabaseManager | None:
         """Find an unlocked database among the open windows.
@@ -126,8 +235,8 @@ class ApplicationBackend:
         Sent by the extension as triggerUnlock when the user actively asked for
         credentials against a locked safe. Returns without waiting: the request
         that prompted it is answered with DATABASE_NOT_OPENED, and the browser
-        finds out the safe is open from the database-unlocked signal, which the
-        listener attached by _watch_managers() will emit.
+        finds out the safe is open from the database-unlocked signal that the
+        window watcher emits once the unlock goes through.
 
         Rate limited. Any process on the socket can ask for this, including
         before it has associated, since get-databasehash needs no association.
@@ -301,6 +410,9 @@ class ApplicationBackend:
             group = group.new_subgroup(part)
 
         return group.props.name, group.uuid.hex
+
+    def icon_color(self) -> str:
+        return config_manager.get_icon_color()
 
     async def generate_password(self) -> str:
         """Generate a password using the application's own generator settings.

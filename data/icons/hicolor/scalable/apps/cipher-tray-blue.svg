@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!--
+    Tray icon: the flat mark, deliberately not the application icon.
+
+    appIcon.png carries a soft gradient background that turns into an
+    indistinct wash once a panel scales it to 16-24px, and its detail is
+    wasted at that size. This is the same geometry drawn flat, matching the
+    browser extension's toolbar icons: keyhole centred at 28% of the width,
+    arms at 35% and 65% running off the right edge.
+
+    Cut through a mask so the keyhole and arms are real transparency, which
+    lets a panel of any colour show through rather than assuming a light one.
+  -->
+  <defs>
+    <mask id="cut">
+      <rect width="64" height="64" fill="black"/>
+      <rect x="1" y="1" width="62" height="62" rx="13" fill="white"/>
+      <circle cx="18" cy="19.5" r="13.5" fill="black"/>
+      <path d="M13.5 29 L10.5 58 H25.5 L22.5 29 Z" fill="black"/>
+      <rect x="38" y="19.4" width="28" height="6" rx="3" fill="black"/>
+      <rect x="38" y="38.6" width="28" height="6" rx="3" fill="black"/>
+    </mask>
+  </defs>
+  <rect width="64" height="64" fill="#1c71d8" mask="url(#cut)"/>
+</svg>

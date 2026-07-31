@@ -3,6 +3,7 @@
 from gi.repository import Adw, Gio, Gtk
 
 import gsecrets.config_manager as config
+from gsecrets.color_widget import IconColorRow  # noqa: F401  (registers the type)
 from gsecrets.const import APP_ID
 from gsecrets.recent_manager import RecentManager
 
@@ -18,6 +19,8 @@ class SettingsDialog(Adw.PreferencesDialog):
     _generator_separator_entry = Gtk.Template.Child()
     _generator_words_spin_row = Gtk.Template.Child()
     _lockdb_spin_row = Gtk.Template.Child()
+    _minimize_after_unlock_row = Gtk.Template.Child()
+    _start_minimized_row = Gtk.Template.Child()
 
     def __init__(self):
         super().__init__()
@@ -40,8 +43,34 @@ class SettingsDialog(Adw.PreferencesDialog):
         browser_integration_action = settings.create_action("browser-integration")
         action_group.add_action(browser_integration_action)
 
+        autostart_action = settings.create_action("autostart")
+        action_group.add_action(autostart_action)
+
         run_in_background_action = settings.create_action("run-in-background")
         action_group.add_action(run_in_background_action)
+
+        minimize_after_unlock_action = settings.create_action("minimize-after-unlock")
+        action_group.add_action(minimize_after_unlock_action)
+
+        start_minimized_action = settings.create_action("start-minimized")
+        action_group.add_action(start_minimized_action)
+
+        settings.bind(
+            "run-in-background",
+            self._start_minimized_row,
+            "sensitive",
+            Gio.SettingsBindFlags.GET,
+        )
+
+        # Minimizing depends on the tray icon to get the window back, and the
+        # tray only exists while running in the background. Follow that setting
+        # so the row greys out rather than offering a switch that does nothing.
+        settings.bind(
+            "run-in-background",
+            self._minimize_after_unlock_row,
+            "sensitive",
+            Gio.SettingsBindFlags.GET,
+        )
 
         # Safe
         save_automatically_action = settings.create_action("save-automatically")

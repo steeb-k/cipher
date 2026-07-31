@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <template class="Window" parent="AdwApplicationWindow">
-    <property name="title" translatable="yes">Secrets</property>
+    <property name="title" translatable="yes">Cipher</property>
     <child>
       <object class="GtkGestureClick">
         <property name="button">8</property>

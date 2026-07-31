@@ -5,7 +5,7 @@ import logging
 from enum import IntEnum
 from gettext import gettext as _
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 import gsecrets.config_manager
 from gsecrets import const
@@ -33,7 +33,15 @@ class Window(Adw.ApplicationWindow):
     __gtype_name__ = "Window"
 
     _create_view = None
-    unlocked_db = None
+
+    # A property rather than a plain attribute so that its assignment can be
+    # observed. It is set once, when a safe is first unlocked, and cleared when
+    # the window moves on to another one; the browser integration watches
+    # notify::unlocked-db for exactly that moment, which is otherwise invisible
+    # -- there is no signal for "a database appeared", and by the time any
+    # request could discover it the unlock is long past.
+    unlocked_db = GObject.Property(type=object, default=None)
+
     # Set while a deliberate quit is under way, so do_close_request() does not
     # reinterpret it as a request to hide to the background.
     _quitting = False
@@ -617,6 +625,40 @@ class Window(Adw.ApplicationWindow):
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         self.lookup_action("go_back").activate()
 
+    def _minimize_after_unlock(self) -> None:
+        """Hide the window on unlocking, when configured to.
+
+        Hooked from the view setter because that is where both unlock paths
+        meet: entering a password lands here from UnlockDatabase, and a quick
+        or fingerprint unlock lands here from the locked property changing.
+        Neither fires when a hidden window is shown again, so this cannot
+        re-hide a window the user just asked to see.
+
+        Gated on run-in-background at runtime and not only in preferences. The
+        tray icon follows that setting, so hiding without it would leave the
+        window with no way back -- and the setting can be changed with gsettings
+        without the greyed-out row ever being involved.
+        """
+        if not gsecrets.config_manager.get_minimize_after_unlock():
+            return
+
+        if not gsecrets.config_manager.get_run_in_background():
+            logging.debug(
+                "Not minimizing after unlock: not running in the background",
+            )
+            return
+
+        def hide() -> int:
+            self.save_window_size()
+            self.set_visible(False)
+            logging.debug("Window hidden after unlock")
+            return GLib.SOURCE_REMOVE
+
+        # Deferred to an idle callback so the stack finishes switching to the
+        # unlocked child first. Hiding partway through leaves the window
+        # showing the previous view when it is next presented.
+        GLib.idle_add(hide)
+
     @property
     def view(self) -> View:
         return self._view
@@ -633,5 +675,6 @@ class Window(Adw.ApplicationWindow):
             stack.props.visible_child_name = "unlock_database"
         elif new_view == self.View.UNLOCKED_DATABASE:
             stack.props.visible_child_name = "unlocked"
+            self._minimize_after_unlock()
         elif new_view == self.View.CREATE_DATABASE:
             stack.props.visible_child_name = "create_database"

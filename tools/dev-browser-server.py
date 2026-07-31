@@ -154,6 +154,10 @@ class DevBackend:
         return group.name, group.uuid.hex
 
 
+    def icon_color(self) -> str:
+        """Fixed, since the real value needs a schema this stub avoids."""
+        return "pink"
+
     async def generate_password(self) -> str:
         """Uses the real generator; only reading its settings needs a schema."""
         from gsecrets import password_generator
