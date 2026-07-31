@@ -57,9 +57,12 @@ PIXMAP_SIZE = 64
 TRAY_ICON_BASE = f"{const.APP_ID}-tray"
 
 
-# The colour a locked safe gets, whatever accent is configured. Shipped as one
-# of the palettes in its own right, so nothing extra has to be installed.
-LOCKED_COLOR = "monochrome"
+# The variant a locked safe gets, whatever accent is configured. Its own icon
+# rather than one of the selectable colours: the obvious candidate, monochrome,
+# is white, which would have made "locked" white instead of grey for every
+# accent -- and indistinguishable from the icon itself for anyone who had chosen
+# Monochrome. Painted in the same dull grey the browser extension uses.
+LOCKED_COLOR = "locked"
 
 
 def tray_icon_color(unlocked: bool) -> str:
@@ -70,9 +73,10 @@ def tray_icon_color(unlocked: bool) -> str:
     is the same division the browser extension draws with its own locked icon.
 
     A safe left open is the state worth noticing, which is why it is the one
-    that keeps the colour. Choosing monochrome as the accent collapses the
-    distinction -- both states are then grey, which is the honest consequence of
-    asking for a colourless icon.
+    that keeps the colour. The locked state has an icon of its own rather than
+    borrowing a palette entry, so it stays distinct even when the chosen accent
+    is Monochrome -- which it did not, when this borrowed that palette: both
+    states came out the same white, and the icon never appeared to change.
 
     Split from tray_icon_name() so the choice can be checked without a display
     and an installed icon theme, which is what the name resolution needs.

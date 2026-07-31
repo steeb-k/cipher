@@ -53,6 +53,12 @@ COLOURS = {
     # and the keyhole is cut out of the shape -- on a light panel the mark reads
     # as an outline rather than disappearing.
     "monochrome": "#fcfcfc",
+    # Not a selectable colour: the state a locked safe takes, whatever colour is
+    # chosen. The same dull grey the browser extension uses for its own locked
+    # icon, so the two agree. It cannot be the monochrome icon above -- that one
+    # is white, so "locked" would have been white rather than grey for every
+    # accent, and identical to the icon itself for anyone on Monochrome.
+    "locked": "#90949b",
 }
 
 

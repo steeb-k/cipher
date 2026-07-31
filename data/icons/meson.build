@@ -45,6 +45,8 @@ tray_icon_colours = [
   'purple',
   'brown',
   'monochrome',
+  # Not selectable: the state a locked safe takes, whatever colour is chosen.
+  'locked',
 ]
 foreach colour : tray_icon_colours
   install_data(

@@ -264,10 +264,31 @@ def run_checks(tmpdir: Path) -> None:
     check("but locked is grey whatever the accent",
           tray_icon_color(False) == LOCKED_COLOR, f"got {tray_icon_color(False)}")
 
-    config_manager.setting.set_string("icon-color", LOCKED_COLOR)
-    check("choosing monochrome collapses the two, as it must",
-          tray_icon_color(True) == tray_icon_color(False))
+    # The regression this check exists for: locked used to borrow the
+    # monochrome palette, so a user who had chosen Monochrome got the same icon
+    # in both states and the tray never appeared to react to a lock at all.
+    config_manager.setting.set_string("icon-color", "monochrome")
+    check("monochrome as the accent still leaves the two distinguishable",
+          tray_icon_color(True) != tray_icon_color(False),
+          f"both {tray_icon_color(True)}")
+    check("and locked is still the locked variant, not the accent",
+          tray_icon_color(False) == LOCKED_COLOR, f"got {tray_icon_color(False)}")
+    check("locked is not any selectable colour, so it cannot collide with one",
+          LOCKED_COLOR not in {
+              "pink", "blue", "green", "yellow", "orange", "red", "purple",
+              "brown", "monochrome",
+          },
+          f"got {LOCKED_COLOR}")
     config_manager.setting.set_string("icon-color", "pink")
+
+    # The icon the locked name resolves to has to actually be shipped, or every
+    # locked safe falls back to the unsuffixed pink mark.
+    icon_dir = REPO_ROOT / "data" / "icons" / "hicolor" / "scalable" / "apps"
+    check("a locked tray icon is shipped for it to resolve to",
+          (icon_dir / f"cipher-tray-{LOCKED_COLOR}.svg").exists(),
+          f"no cipher-tray-{LOCKED_COLOR}.svg in {icon_dir}")
+    check("and meson installs it",
+          f"'{LOCKED_COLOR}'" in (REPO_ROOT / "data" / "icons" / "meson.build").read_text())
 
     print("\nThe shared watcher reports what the tray paints by")
     from gsecrets.safe_watcher import SafeWatcher, any_unlocked
