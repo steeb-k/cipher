@@ -82,6 +82,13 @@ class UnlockDatabase(Adw.Bin):
         self.event_controller.connect("enter", self.on_enter)
         self.event_controller.connect("leave", self.on_leave)
 
+        # Watching the toplevel is what the focus controller above cannot do.
+        # It reports focus moving between widgets within the window, which says
+        # nothing about whether the window itself is the one the user is looking
+        # at -- alt-tabbing away, or hiding to the tray, leaves the unlock view
+        # holding focus exactly as it was.
+        self._window_active_handler: int | None = None
+
         settings = self.window.application.settings
         settings.connect(
             "changed::fingerprint-quick-unlock",
@@ -114,17 +121,16 @@ class UnlockDatabase(Adw.Bin):
         if self.fprint is None and gsecrets.config_manager.get_fingerprint_quick_unlock():
             self._map_fingerprint_reader()
 
+        if self._window_active_handler is None:
+            self._window_active_handler = self.window.connect(
+                "notify::is-active",
+                self._on_window_active_changed,
+            )
+
         # Arming the reader is otherwise driven by focus entering this view,
         # which showing the window again does not do -- leaving the sensor dead
-        # until the user clicks into the password field. Arm it here on exactly
-        # the terms on_enter() uses, so a safe that was unlocked earlier in this
-        # run can be reopened with a finger straight away.
-        if (
-            self.database_manager
-            and self.database_manager.password != ""
-            and self.fprint_tries < self.FPRINT_MAX_TRIES
-        ):
-            self._start_fingerprint_reader()
+        # until the user clicks into the password field.
+        self._sync_fingerprint_reader()
 
     def do_unmap(self):  # pylint: disable=arguments-differ
         Gtk.Widget.do_unmap(self)
@@ -132,7 +138,13 @@ class UnlockDatabase(Adw.Bin):
         if self._focus_controller_attached:
             self.remove_controller(self.event_controller)
             self._focus_controller_attached = False
+        if self._window_active_handler is not None:
+            self.window.disconnect(self._window_active_handler)
+            self._window_active_handler = None
         self._unmap_fingerprint_reader()
+
+    def _on_window_active_changed(self, _window, _spec) -> None:
+        self._sync_fingerprint_reader()
 
     def on_enter(self, _user_data):
         if self.database_manager and self.database_manager.password != "":
@@ -142,15 +154,12 @@ class UnlockDatabase(Adw.Bin):
             ):
                 self.window.show_banner(_("Quick Unlock active"))
                 self.provider_group.props.visible = False
-            # only start reading if there are still tries left
-            if self.fprint_tries < self.FPRINT_MAX_TRIES:
-                self._start_fingerprint_reader()
+            self._sync_fingerprint_reader()
         else:
             logging.debug("Quick unlock disabled as no password is available.")
 
     def on_leave(self, _user_data):
-        if self.fprint_tries < self.FPRINT_MAX_TRIES:
-            self._stop_fingerprint_reader()
+        self._stop_fingerprint_reader()
 
     def grab_entry_focus(self):
         self.password_entry.grab_focus()
@@ -364,9 +373,47 @@ class UnlockDatabase(Adw.Bin):
         if gsecrets.config_manager.get_fingerprint_quick_unlock():
             logging.debug("Fingerprint got enabled, mapping fingerprint reader...")
             self._map_fingerprint_reader()
+            self._sync_fingerprint_reader()
         else:
             logging.debug("Fingerprint got disabled, unmapping fingerprint reader...")
             self._unmap_fingerprint_reader()
+
+    def _fingerprint_wanted(self) -> bool:
+        """Whether the sensor may be claimed at this instant.
+
+        fprintd gives the reader to one client at a time, so for as long as
+        Cipher holds it nothing else on the machine can read a finger -- not
+        sudo, not the screen lock, not the login prompt. That is an acceptable
+        trade only while the user is actually looking at the unlock screen and
+        might present a finger to it.
+
+        Being mapped is not enough on its own, and neither is holding focus.
+        Focus survives the window being hidden, so a safe that locks on a timer
+        while Cipher sits in the tray builds an unlock view, focuses its
+        password entry, and would arm the sensor indefinitely with nothing on
+        screen to explain why every other fingerprint prompt on the system has
+        started refusing. The toplevel being active is the part that says the
+        window is genuinely in front of the user.
+        """
+        if self.fprint is None:
+            return False
+
+        if not self.get_mapped() or not self.window.is_active():
+            return False
+
+        if not self.database_manager or self.database_manager.password == "":
+            logging.debug("Quick unlock disabled as no password is available.")
+            return False
+
+        # Only start reading if there are still tries left.
+        return self.fprint_tries < self.FPRINT_MAX_TRIES
+
+    def _sync_fingerprint_reader(self) -> None:
+        """Bring the reader in line with whether it is currently wanted."""
+        if self._fingerprint_wanted():
+            self._start_fingerprint_reader()
+        else:
+            self._stop_fingerprint_reader()
 
     def _start_fingerprint_reader_cb(self) -> None:
         if not self.fprint:
@@ -411,6 +458,7 @@ class UnlockDatabase(Adw.Bin):
                 self._on_fingerprint_success,
                 self._on_fingerprint_retry,
                 self._on_fingerprint_failure,
+                self._fingerprint_wanted,
             )
         except RuntimeError as err:
             logging.debug("Failed initialize fingerprint: %s", err)

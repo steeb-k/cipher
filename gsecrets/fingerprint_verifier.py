@@ -219,6 +219,7 @@ class FingerprintVerifier:
         on_success: Callable,
         on_retry: Callable,
         on_failure: Callable,
+        can_verify: Callable[[], bool] | None = None,
     ) -> None:
         """Constructor.
 
@@ -231,11 +232,17 @@ class FingerprintVerifier:
             on_retry: Function to be called if the fingerprint sensor suggests retrying.
             on_failure: Function to be called if the fingerprint did not match or the
                         hardware refused in the process.
+            can_verify: Consulted immediately before every claim. The owner gets
+                        the final say on whether the reader may be taken, so
+                        that arming routes it does not drive itself -- the retry
+                        after a no-match, the re-arm after resume -- cannot take
+                        the device on terms the owner would refuse.
 
         """
         self.on_success = on_success
         self.on_retry = on_retry
         self.on_failure = on_failure
+        self._can_verify = can_verify
 
         self._is_claimed = False
         self._device_proxy = None
@@ -331,6 +338,14 @@ class FingerprintVerifier:
 
     async def _verify_start_locked(self) -> bool:
         if self._device_proxy is None:
+            return False
+
+        # Checked here rather than at each call site, and inside the lock so it
+        # reflects the moment the claim is actually taken: a start requested
+        # while the unlock screen was in front of the user can easily be waiting
+        # on the lock by the time it is not.
+        if self._can_verify is not None and not self._can_verify():
+            logging.debug("Not claiming the fingerprint device: owner declined")
             return False
 
         global _claim_holder  # noqa: PLW0603
