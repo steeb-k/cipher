@@ -1,0 +1,54 @@
+{
+    "id": "io.github.steeb_k.Cipher",
+    "runtime": "org.gnome.Platform",
+    "runtime-version": "50",
+    "sdk": "org.gnome.Sdk",
+    "sdk-extensions": [
+        "org.freedesktop.Sdk.Extension.rust-stable"
+    ],
+    "command": "cipher",
+    "finish-args": [
+        "--device=all",
+        "--device=dri",
+        "--share=ipc",
+        "--share=network",
+        "--socket=fallback-x11",
+        "--socket=pcsc",
+        "--socket=wayland",
+        "--system-talk-name=net.reactivated.Fprint",
+        "--system-talk-name=org.freedesktop.login1",
+        "--talk-name=org.kde.StatusNotifierWatcher"
+    ],
+    "cleanup": [
+        "*.a",
+        "*.la",
+        "/include",
+        "/lib/cmake",
+        "/lib/pkgconfig",
+        "/man",
+        "/share/aclocal",
+        "/share/gtk-doc",
+        "/share/man",
+        "/share/doc",
+        "/share/pkgconfig"
+    ],
+    "modules": [
+        "python3-pykeepass.json",
+        "python3-validators.json",
+        "python3-zxcvbn-rs-py.json",
+        "python3-python-yubico.json",
+        "python3-pykcs11.json",
+        "python3-pyhibp.json",
+        "python3-pynacl.json",
+        {
+            "name": "cipher",
+            "buildsystem": "meson",
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": "../"
+                }
+            ]
+        }
+    ]
+}

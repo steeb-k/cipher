@@ -27,3 +27,21 @@ Then add `"pykeepass-build-sources.json"` as a source and `--ignore-installed` t
 
     flatpak-pip-generator pyhibp -o flatpak/python3-pyhibp
 
+# Update python3-pynacl.json
+
+PyNaCl ships prebuilt manylinux wheels that bundle libsodium, so unlike the
+other compiled dependencies it needs no build step -- but the wheels are
+per-architecture, so the module lists one behind `only-arches` for each
+architecture we build, the same way maturin.json does. `flatpak-pip-generator`
+only emits the host architecture's wheel, so the second entry has to be added
+by hand. Take the `cp38-abi3` manylinux2014 wheels, which are ABI-stable across
+Python versions and target a glibc old enough for any runtime we use:
+
+    curl -s https://pypi.org/pypi/pynacl/json | \
+    jq -r '.releases[.info.version][]
+           | select(.filename | test("cp38-abi3-manylinux2014"))
+           | "\(.filename)\n  \(.url)\n  \(.digests.sha256)"'
+
+`--no-deps` in the build command is deliberate: PyNaCl depends on cffi, which
+python3-pykeepass.json already builds for argon2.
+

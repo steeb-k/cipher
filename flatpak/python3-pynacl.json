@@ -1,0 +1,25 @@
+{
+    "name": "python3-pynacl",
+    "buildsystem": "simple",
+    "build-commands": [
+        "pip3 install --verbose --exists-action=i --no-index --no-deps --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} pynacl"
+    ],
+    "sources": [
+        {
+            "type": "file",
+            "only-arches": [
+                "x86_64"
+            ],
+            "url": "https://files.pythonhosted.org/packages/7f/81/d60984052df5c97b1d24365bc1e30024379b42c4edcd79d2436b1b9806f2/pynacl-1.6.2-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+            "sha256": "22de65bb9010a725b0dac248f353bb072969c94fa8d6b1f34b87d7953cf7bbe4"
+        },
+        {
+            "type": "file",
+            "only-arches": [
+                "aarch64"
+            ],
+            "url": "https://files.pythonhosted.org/packages/1e/b4/e927e0653ba63b02a4ca5b4d852a8d1d678afbf69b3dbf9c4d0785ac905c/pynacl-1.6.2-cp38-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+            "sha256": "8845c0631c0be43abdd865511c41eab235e0be69c81dc66a50911594198679b0"
+        }
+    ]
+}

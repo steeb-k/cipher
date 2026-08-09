@@ -15,11 +15,11 @@ stages:
   - deploy
 
 variables:
-    BUNDLE: "org.gnome.World.Secrets.Devel.flatpak"
-    MANIFEST_PATH: "flatpak/org.gnome.World.Secrets.Devel.json"
-    FLATPAK_MODULE: "secrets"
-    APP_ID: "org.gnome.World.Secrets.Devel"
-    RUNTIME_REPO: "https://nightly.gnome.org/gnome-nightly.flatpakrepo"
+    BUNDLE: "io.github.steeb_k.Cipher.Devel.flatpak"
+    MANIFEST_PATH: "flatpak/io.github.steeb_k.Cipher.Devel.json"
+    FLATPAK_MODULE: "cipher"
+    APP_ID: "io.github.steeb_k.Cipher.Devel"
+    RUNTIME_REPO: "https://flathub.org/repo/flathub.flatpakrepo"
 
 flatpak_x86_64:
     extends: .flatpak@x86_64

@@ -1,7 +1,7 @@
 {
-    "id": "org.gnome.World.Secrets.Devel",
+    "id": "io.github.steeb_k.Cipher.Devel",
     "runtime": "org.gnome.Platform",
-    "runtime-version": "master",
+    "runtime-version": "50",
     "sdk": "org.gnome.Sdk",
     "sdk-extensions": [
         "org.freedesktop.Sdk.Extension.rust-stable"
@@ -11,7 +11,7 @@
         "development",
         "nightly"
     ],
-    "command": "secrets",
+    "command": "cipher",
     "finish-args": [
         "--device=all",
         "--device=dri",
@@ -20,7 +20,9 @@
         "--socket=fallback-x11",
         "--socket=pcsc",
         "--socket=wayland",
-        "--system-talk-name=net.reactivated.Fprint"
+        "--system-talk-name=net.reactivated.Fprint",
+        "--system-talk-name=org.freedesktop.login1",
+        "--talk-name=org.kde.StatusNotifierWatcher"
     ],
     "cleanup": [
         "*.a",
@@ -43,8 +45,9 @@
         "python3-python-yubico.json",
         "python3-pykcs11.json",
         "python3-pyhibp.json",
+        "python3-pynacl.json",
         {
-            "name": "secrets",
+            "name": "cipher",
             "buildsystem": "meson",
             "run-tests": true,
             "config-opts": [
