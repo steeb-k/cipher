@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
+import os
+
 APP_ID = "@APPID@"
 VERSION = "@VERSION@"
 GETTEXT_PACKAGE = "@GETTEXT_PACKAGE@"
@@ -12,3 +14,10 @@ PKCS11_LIB = "@PKCS11_LIB@"
 IS_DEVEL = PROFILE == "Devel"
 SUFFIX = " (Devel)" if IS_DEVEL else ""
 SHORT_NAME = GETTEXT_PACKAGE
+
+# Flatpak stamps this file into every sandbox it builds, so its presence is the
+# supported way to ask. Determined at runtime rather than at build time: the
+# same build is installed both ways, and what differs is only the view of the
+# session -- a private runtime directory, a config directory nothing else
+# reads, and a bus that refuses names outside the application ID.
+IS_FLATPAK = os.path.exists("/.flatpak-info")

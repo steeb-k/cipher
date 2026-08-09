@@ -278,6 +278,12 @@ class TrayIcon:
 
         # The documented naming convention. Hosts also accept a unique name, but
         # a well-known one is what every other implementation registers.
+        #
+        # Except under Flatpak, where we cannot own it: the sandbox grants names
+        # by exact match or by a trailing ".*" wildcard, and neither form can
+        # express a PID suffix, so there is no manifest permission that would
+        # allow this name. start() falls back to the connection's unique name,
+        # which the specification and every host in practice also accept.
         self._bus_name = f"org.kde.StatusNotifierItem-{os.getpid()}-1"
 
     @property
@@ -327,13 +333,18 @@ class TrayIcon:
         except GLib.Error as err:
             logging.warning("Could not export the tray menu: %s", err)
 
-        self._owner_id = Gio.bus_own_name_on_connection(
-            connection,
-            self._bus_name,
-            Gio.BusNameOwnerFlags.NONE,
-            None,
-            None,
-        )
+        if const.IS_FLATPAK:
+            # Registering under the unique name means there is nothing to own
+            # and nothing to release; stop() skips both, as _owner_id stays 0.
+            self._bus_name = connection.get_unique_name()
+        else:
+            self._owner_id = Gio.bus_own_name_on_connection(
+                connection,
+                self._bus_name,
+                Gio.BusNameOwnerFlags.NONE,
+                None,
+                None,
+            )
 
         self._color_handler = self._settings.connect(
             f"changed::{config_manager.ICON_COLOR}",

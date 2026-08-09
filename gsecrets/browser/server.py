@@ -30,10 +30,23 @@ def socket_directory() -> Path:
 
     Derived from the application ID so that a Devel build and a stable build
     can run at the same time without fighting over one socket.
+
+    Under Flatpak the runtime directory is private to the sandbox, so a socket
+    opened there is invisible to the browser and to the proxy, both of which
+    run on the host. The one runtime path Flatpak shares across that boundary
+    is $XDG_RUNTIME_DIR/app/$FLATPAK_ID, mounted at the same path on both
+    sides -- so the proxy can still find the socket by building the same path,
+    which is what tools/cipher-proxy does.
     """
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
     if not runtime_dir:
         runtime_dir = f"/run/user/{os.getuid()}"
+
+    if const.IS_FLATPAK:
+        # The directory is named for the Flatpak application ID, which matches
+        # APP_ID for our own builds; read it from the environment anyway, since
+        # that is what actually decides which directory was shared.
+        return Path(runtime_dir) / "app" / os.environ.get("FLATPAK_ID", const.APP_ID)
 
     return Path(runtime_dir) / const.APP_ID
 

@@ -28,9 +28,23 @@ SOCKET_NAME = "BrowserServer"
 MAX_MESSAGE = 1024 * 1024
 
 
-def socket_path() -> Path:
-    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-    return Path(runtime_dir) / APP_ID / SOCKET_NAME
+def socket_paths() -> list[Path]:
+    """Where Cipher may be listening, in the order worth trying.
+
+    A Flatpak Cipher cannot use its own runtime directory, because that is
+    private to the sandbox and this process runs on the host. It uses the
+    directory Flatpak shares between the two instead, so both layouts have to
+    be considered here -- we are not told which kind of install we are talking
+    to, and both may be present on one machine.
+
+    The host install comes first: someone who has both almost certainly built
+    the unsandboxed one deliberately, and it is the one they are debugging.
+    """
+    runtime_dir = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+    return [
+        runtime_dir / APP_ID / SOCKET_NAME,
+        runtime_dir / "app" / APP_ID / SOCKET_NAME,
+    ]
 
 
 def log(message: str) -> None:
@@ -110,23 +124,43 @@ def socket_to_browser(sock: socket.socket) -> None:
         log(f"socket->browser ended: {exc}")
 
 
-def main() -> int:
-    path = socket_path()
+def connect() -> tuple[socket.socket, Path] | OSError:
+    """Connect to the first candidate that answers, or return the last error."""
+    last: OSError | None = None
 
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        sock.connect(str(path))
-    except OSError as exc:
-        log(f"cannot connect to {path}: {exc}")
+    for path in socket_paths():
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            sock.connect(str(path))
+        except OSError as exc:
+            sock.close()
+            log(f"cannot connect to {path}: {exc}")
+            last = exc
+            continue
+        return sock, path
+
+    # socket_paths() is never empty, so a failure always leaves an error here.
+    assert last is not None
+    return last
+
+
+def main() -> int:
+    connected = connect()
+    if isinstance(connected, OSError):
         # Report the failure in-band so the extension can surface it, using
         # the protocol's TIMEOUT_OR_NOT_CONNECTED code.
         write_native_message(
             json.dumps(
-                {"action": "", "error": f"Cipher is not running: {exc}", "errorCode": 5}
+                {
+                    "action": "",
+                    "error": f"Cipher is not running: {connected}",
+                    "errorCode": 5,
+                }
             ).encode("utf-8")
         )
         return 1
 
+    sock, path = connected
     log(f"connected to {path}")
 
     reader = threading.Thread(target=socket_to_browser, args=(sock,), daemon=True)
