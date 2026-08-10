@@ -1,11 +1,21 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- SPDX-License-Identifier: GPL-3.0-only -->
-<!--
-  Symbolic form of the application icon: the keyhole from appIcon.png, as a
-  single monochrome path. Hand-drawn rather than traced from the PNG, because a
-  symbolic icon has to be one flat shape that GTK can recolour, which a raster
-  cannot provide.
--->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!--
+    SPDX-License-Identifier: GPL-3.0-only
+
+    Symbolic form of the application icon: the keyhole from appIcon.png, as a
+    single monochrome path. Hand-drawn rather than traced from the PNG, because
+    a symbolic icon has to be one flat shape that GTK can recolour, which a
+    raster cannot provide.
+
+    The root element opens the file, with no XML declaration and no comment
+    ahead of it, matching the tray icons. That is not a style choice: gdk-pixbuf
+    identifies an image by sniffing its leading bytes, and anything above the
+    root pushes the tag out of the window it looks at. The file stays valid XML
+    and still renders, but flatpak-validate-icon rejects every exported icon it
+    cannot identify, so the export fails with "Format not recognized".
+
+    Note also that a double hyphen cannot appear in an XML comment. It makes the
+    file malformed, which fails the same check by a different route.
+  -->
   <path fill="#2e3436" d="M8 1.5A4.2 4.2 0 0 0 6.05 9.4L4.7 13.15A0.65 0.65 0 0 0 5.31 14h5.38a0.65 0.65 0 0 0 0.61-0.85L9.95 9.4A4.2 4.2 0 0 0 8 1.5Z"/>
 </svg>
