@@ -2,25 +2,24 @@
     "name": "python3-zxcvbn-rs-py",
     "buildsystem": "simple",
     "build-commands": [
-        "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"zxcvbn-rs-py\" --no-build-isolation"
+        "pip3 install --verbose --exists-action=i --no-index --no-deps --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"zxcvbn-rs-py\""
     ],
-    "modules": [
-        "maturin.json"
-    ],
-    "build-options": {
-        "append-path": "/usr/lib/sdk/rust-stable/bin",
-        "env": {
-            "CARGO_HOME": "/run/build/python3-zxcvbn-rs-py/cargo",
-            "CARGO_NET_OFFLINE": "true",
-            "RUST_BACKTRACE": "1"
-        }
-    },
     "sources": [
-        "python3-zxcvbn-rs-py-sources.json",
         {
             "type": "file",
-            "url": "https://files.pythonhosted.org/packages/f4/e6/358b4b2ce6596f96ee09995ede35a53e9a6b6a8df4183723c4a835781c99/zxcvbn_rs_py-0.2.0.tar.gz",
-            "sha256": "0d0cdd3a780719999ad8dc9facdb8ca691ba1b3a46a0a7f055019456637b7ab0"
+            "only-arches": [
+                "x86_64"
+            ],
+            "url": "https://files.pythonhosted.org/packages/91/16/e3b7c55e3ea72aac3af8e1cd133d6aeedc3a0dc7341ca0d2467bfa136ece/zxcvbn_rs_py-0.2.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "sha256": "7df786b86b84b591fa3e791403183ab78a7f72307d4c71cce623218e14415fae"
+        },
+        {
+            "type": "file",
+            "only-arches": [
+                "aarch64"
+            ],
+            "url": "https://files.pythonhosted.org/packages/6f/7e/a79af0f8799e3028021efec580c6f3ecb8d26f278b7cb69795fc38198bc2/zxcvbn_rs_py-0.2.0-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "sha256": "1fade2dfb501f0708c7121815edb3a7c57df0ffd02f896c44bedcbf58178fd12"
         }
     ]
 }
