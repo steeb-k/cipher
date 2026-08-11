@@ -3,7 +3,7 @@
 </a>
 
 # Secrets
-<img src="data/icons/hicolor/scalable/apps/org.gnome.World.Secrets.svg" width="128" height="128" />
+<img src="data/icons/hicolor/scalable/apps/cipher.svg" width="128" height="128" />
 <p>Manage your passwords</p>
 
 Secrets is a password manager which makes use of the KeePass v.4 format. It

@@ -1,21 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>Cipher symbolic</title>
   <!--
     SPDX-License-Identifier: GPL-3.0-only
 
-    Symbolic form of the application icon: the keyhole from appIcon.png, as a
-    single monochrome path. Hand-drawn rather than traced from the PNG, because
-    a symbolic icon has to be one flat shape that GTK can recolour, which a
-    raster cannot provide.
+    Symbolic form of the application icon: the cipher wheel, its hub and the
+    handle, reduced to flat monochrome shapes. Ring and handle tip share a
+    radius of 7.25; the break in the ring clears the handle by 1.33px at the
+    ring's inner edge.
+
+    Every shape is a fill and nothing here is stroked. That is not a style
+    choice: GTK recolours a symbolic icon by wrapping the file in a stylesheet
+    that sets fill on rect, circle and path, which leaves a stroke exactly as
+    authored. An outline drawn with stroke would keep its authored colour and
+    disappear against a dark panel, so each outline is expanded into the path
+    that fills it instead. Regenerating from a stroked drawing means expanding
+    the strokes again, not pasting them back.
 
     The root element opens the file, with no XML declaration and no comment
-    ahead of it, matching the tray icons. That is not a style choice: gdk-pixbuf
-    identifies an image by sniffing its leading bytes, and anything above the
-    root pushes the tag out of the window it looks at. The file stays valid XML
-    and still renders, but flatpak-validate-icon rejects every exported icon it
-    cannot identify, so the export fails with "Format not recognized".
+    ahead of it, matching the tray icons. That is not a style choice either:
+    gdk-pixbuf identifies an image by sniffing its leading bytes, and anything
+    above the root pushes the tag out of the window it looks at. The file stays
+    valid XML and still renders, but flatpak-validate-icon rejects every
+    exported icon it cannot identify, so the export fails with "Format not
+    recognized".
 
-    Note also that a double hyphen cannot appear in an XML comment. It makes the
-    file malformed, which fails the same check by a different route.
+    Note also that a double hyphen cannot appear in an XML comment. It makes
+    the file malformed, which fails the same check by a different route.
   -->
-  <path fill="#2e3436" d="M8 1.5A4.2 4.2 0 0 0 6.05 9.4L4.7 13.15A0.65 0.65 0 0 0 5.31 14h5.38a0.65 0.65 0 0 0 0.61-0.85L9.95 9.4A4.2 4.2 0 0 0 8 1.5Z"/>
+  <path fill="#2e3436" d="M13.4422 3.21A7.25 7.25 0 1 0 13.4422 12.79L12.2412 11.7329A5.65 5.65 0 1 1 12.2412 4.2671Z"/>
+  <path fill="#2e3436" d="M5.4 8A2.6 2.6 0 1 1 10.6 8A2.6 2.6 0 1 1 5.4 8ZM7 8A1 1 0 1 0 9 8A1 1 0 1 0 7 8Z"/>
+  <path fill="#2e3436" d="M9.7686 6.8003L14.8186 4.3403A0.3 0.3 0 0 1 15.25 4.61L15.25 11.39A0.3 0.3 0 0 1 14.8186 11.6597L9.7686 9.1997A0.3 0.3 0 0 1 9.6 8.93L9.6 7.07A0.3 0.3 0 0 1 9.7686 6.8003Z"/>
 </svg>

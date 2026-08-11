@@ -1,28 +1,24 @@
 datadir = join_paths('share', 'icons')
 
-# The application icon is a raster image, so it is installed at each size an
-# icon theme looks for rather than once as a scalable SVG. The upstream
-# scalable/ SVGs are deliberately no longer installed: an SVG satisfies theme
-# lookup at every size, so leaving it in place would shadow these entirely and
-# the old artwork would keep appearing.
+# The application icon, installed once as a scalable SVG: an SVG satisfies
+# theme lookup at every size, so there is nothing to gain from rasterising it
+# into a size ladder as well. There deliberately is no raster copy anywhere
+# under hicolor -- a leftover PNG at some size would win the lookup there and
+# the old artwork would keep appearing at exactly that size.
 #
 # The installed name must match application_id, since that is what
-# set_default_icon_name() and the desktop file's Icon key both use. Regenerate
-# with tools/generate-app-icon.sh after replacing data/icons/appIcon.png.
-icon_sizes = ['16', '24', '32', '48', '64', '128', '256', '512']
-foreach size : icon_sizes
-  sizedir = join_paths('hicolor', size + 'x' + size, 'apps')
-  install_data(
-    join_paths(sizedir, 'cipher.png'),
-    install_dir: join_paths(datadir, sizedir),
-    rename: '@0@.png'.format(application_id),
-  )
-endforeach
+# set_default_icon_name() and the desktop file's Icon key both use.
+appicondir = join_paths('hicolor', 'scalable', 'apps')
+install_data(
+  join_paths(appicondir, 'cipher.svg'),
+  install_dir: join_paths(datadir, appicondir),
+  rename: '@0@.svg'.format(application_id),
+)
 
-# The tray icon, installed scalable under its own name. Installing it under a
-# distinct name is what keeps the caveat above from applying: an SVG named
-# after the application ID would satisfy theme lookup at every size and shadow
-# the raster icon, but this one is only ever asked for by name from tray.py.
+# The tray icon, installed scalable under its own name so it does not collide
+# with the application icon above; it is only ever asked for by name from
+# tray.py. Regenerate with tools/generate-tray-icons.py, which re-paints the
+# symbolic icon rather than redrawing it.
 trayicondir = join_paths('hicolor', 'scalable', 'apps')
 install_data(
   join_paths(trayicondir, 'cipher-tray.svg'),
@@ -32,9 +28,7 @@ install_data(
 
 # The same mark in each selectable colour, which is what tray.py actually asks
 # for; the unsuffixed one above stays installed as the fallback for a setting
-# that names a colour this build does not have. Regenerate with
-# tools/generate-tray-icons.py, which re-paints the file above rather than
-# redrawing it.
+# that names a colour this build does not have.
 tray_icon_colours = [
   'pink',
   'blue',
@@ -56,9 +50,9 @@ foreach colour : tray_icon_colours
   )
 endforeach
 
-# Still an SVG, and necessarily so: a symbolic icon is recoloured by GTK, which
-# a raster cannot support. Drawn to match the keyhole in appIcon.png rather than
-# traced from it. Used for the empty-selection page, see unlocked_database.py.
+# The monochrome form of the same mark, drawn as flat fills so GTK can recolour
+# it. Used for the empty-selection page, see unlocked_database.py, and it is
+# also what the tray icons above are painted from.
 symbolicdir = join_paths('hicolor', 'symbolic', 'apps')
 install_data(
   join_paths(symbolicdir, 'cipher-symbolic.svg'),

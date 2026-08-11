@@ -35,6 +35,25 @@ app_id() {
     grep '^APP_ID' "$BUILD_DIR/gsecrets/const.py" | cut -d'"' -f2
 }
 
+# The application icon used to be installed as a PNG at eight sizes, and is a
+# single scalable SVG now. ninja only knows how to uninstall what the build it
+# was configured from installs, so an install made before that change leaves
+# those PNGs behind -- and a leftover raster wins the icon theme's lookup at
+# exactly the size it sits in, which shows up as the old artwork appearing at
+# some sizes and the new one at others. Clear them out by name.
+remove_stale_raster_icons() {
+    local id="$1" dir removed=0
+
+    for dir in "$DATA_DIR"/icons/hicolor/*x*/apps; do
+        [ -f "$dir/$id.png" ] || continue
+        rm -f "$dir/$id.png"
+        rmdir -p --ignore-fail-on-non-empty "$dir" 2>/dev/null || true
+        removed=1
+    done
+
+    [ "$removed" = 0 ] || echo "Removed raster icons left by an earlier install"
+}
+
 if [ "${1:-}" = "--uninstall" ]; then
     if [ ! -f "$BUILD_DIR/build.ninja" ]; then
         echo "no build directory at $BUILD_DIR; nothing to uninstall" >&2
@@ -42,6 +61,7 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
     echo "Uninstalling from $PREFIX"
     ninja -C "$BUILD_DIR" uninstall >/dev/null
+    remove_stale_raster_icons "$(app_id)"
     glib-compile-schemas "$SCHEMA_DIR" 2>/dev/null || true
     echo "Done."
     exit 0
@@ -70,6 +90,8 @@ APP_ID="$(app_id)"
 # are cheap and idempotent.
 glib-compile-schemas "$SCHEMA_DIR"
 
+remove_stale_raster_icons "$APP_ID"
+
 if command -v gtk4-update-icon-cache >/dev/null; then
     gtk4-update-icon-cache -qtf "$DATA_DIR/icons/hicolor" 2>/dev/null || true
 fi
@@ -84,7 +106,7 @@ BINARY="$(grep '^binary_name' "$SOURCE_DIR/meson.build" | cut -d"'" -f2)"
 echo "Installed $APP_ID into $PREFIX"
 echo "  binary   $PREFIX/bin/$BINARY"
 echo "  desktop  $DATA_DIR/applications/$APP_ID.desktop"
-echo "  icons    $DATA_DIR/icons/hicolor/*/apps/$APP_ID.png"
+echo "  icons    $DATA_DIR/icons/hicolor/*/apps/$APP_ID*.svg"
 
 if ! printf '%s' ":$PATH:" | grep -q ":$PREFIX/bin:"; then
     echo

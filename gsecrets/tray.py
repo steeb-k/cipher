@@ -50,10 +50,11 @@ MENU_ID_QUIT = 3
 # panel without making the message large.
 PIXMAP_SIZE = 64
 
-# The flat mark rather than the application icon. appIcon.png has a soft
-# gradient background that blurs into a wash at panel size, so the tray gets the
-# same simplified artwork the browser extension uses. Installed by
-# data/icons/meson.build under this name, once plain and once per colour.
+# The monochrome mark rather than the application icon. The application icon is
+# drawn in five shades of gold whose detail is lost once a panel scales it to
+# 16-24px, so the tray gets the symbolic drawing painted in one flat colour
+# instead. Installed by data/icons/meson.build under this name, once plain and
+# once per colour; painted by tools/generate-tray-icons.py.
 TRAY_ICON_BASE = f"{const.APP_ID}-tray"
 
 

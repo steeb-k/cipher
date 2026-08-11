@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"
+     viewBox="0 0 128 128" role="img" aria-label="Cipher">
+  <title>Cipher</title>
+  <!--
+    SPDX-License-Identifier: GPL-3.0-only
+
+    The application icon. Installed scalable under the application ID, which is
+    what set_default_icon_name(), the desktop file's Icon key and the status
+    pages all ask for, so this one file answers every size an icon theme looks
+    for.
+
+    The root element opens the file, with no XML declaration and no comment
+    ahead of it, and no comment below contains a double hyphen. Both matter for
+    the flatpak export rather than being style choices; the reasons are written
+    out in full in the symbolic icon beside this one.
+  -->
+  <!-- Flat colours, no gradients. Depth is a solid extruded side wall (#b06f14):
+       4px under the body, 2.5px under the rotor, 2px under the boss,
+       2.5px under the handle. Handle windows show the ring and rotor beneath.
+       Palette light to dark: #fce27e #f5c93f #e2a127 #b06f14 #8a5514 -->
+
+  <!-- ============ letter ring ============ -->
+  <path fill="#b06f14" fill-rule="evenodd"
+        d="M5 66a56 56 0 1 0 112 0a56 56 0 1 0 -112 0Z
+           M18 66a43 43 0 1 0 86 0a43 43 0 1 0 -86 0Z"/>
+  <path fill="#f5c93f" fill-rule="evenodd"
+        d="M5 62a56 56 0 1 0 112 0a56 56 0 1 0 -112 0Z
+           M18 62a43 43 0 1 0 86 0a43 43 0 1 0 -86 0Z"/>
+  <g stroke="#8a5514" stroke-width="2.2" fill="none">
+      <path d="M100.52 39.46L107.47 35.49"/>
+      <path d="M92.38 29.05L97.89 23.26"/>
+      <path d="M81.59 21.42L85.21 14.29"/>
+      <path d="M69.06 17.22L70.47 9.35"/>
+      <path d="M55.85 16.79L54.94 8.84"/>
+      <path d="M43.08 20.18L39.92 12.83"/>
+      <path d="M31.81 27.09L26.68 20.96"/>
+      <path d="M23.01 36.95L16.34 32.55"/>
+      <path d="M17.42 48.93L9.76 46.63"/>
+      <path d="M15.5 62L7.5 62"/>
+      <path d="M17.42 75.07L9.76 77.37"/>
+      <path d="M23.01 87.05L16.34 91.45"/>
+      <path d="M31.81 96.91L26.68 103.04"/>
+      <path d="M43.08 103.82L39.92 111.17"/>
+      <path d="M55.85 107.21L54.94 115.16"/>
+      <path d="M69.06 106.78L70.47 114.65"/>
+      <path d="M81.59 102.58L85.21 109.71"/>
+      <path d="M92.38 94.95L97.89 100.74"/>
+      <path d="M100.52 84.54L107.47 88.51"/>
+  </g>
+
+  <!-- ============ rotor ============ -->
+  <circle cx="61" cy="64.5" r="43" fill="#b06f14"/>
+  <circle cx="61" cy="62" r="43" fill="#e2a127"/>
+  <g fill="#8a5514">
+      <circle cx="89.27" cy="43.11" r="2.7"/>
+      <circle cx="79.89" cy="33.73" r="2.7"/>
+      <circle cx="67.63" cy="28.65" r="2.7"/>
+      <circle cx="54.37" cy="28.65" r="2.7"/>
+      <circle cx="42.11" cy="33.73" r="2.7"/>
+      <circle cx="32.73" cy="43.11" r="2.7"/>
+      <circle cx="27.65" cy="55.37" r="2.7"/>
+      <circle cx="27.65" cy="68.63" r="2.7"/>
+      <circle cx="32.73" cy="80.89" r="2.7"/>
+      <circle cx="42.11" cy="90.27" r="2.7"/>
+      <circle cx="54.37" cy="95.35" r="2.7"/>
+      <circle cx="67.63" cy="95.35" r="2.7"/>
+      <circle cx="79.89" cy="90.27" r="2.7"/>
+      <circle cx="89.27" cy="80.89" r="2.7"/>
+  </g>
+
+  <!-- ============ central boss ============ -->
+  <circle cx="61" cy="64" r="17" fill="#b06f14"/>
+  <circle cx="61" cy="62" r="17" fill="#f5c93f"/>
+
+  <!-- ============ handle ============ -->
+  <g fill="#b06f14" stroke="#b06f14" stroke-width="7" stroke-linejoin="round">
+      <path d="M61 64.5 L120.5 50.76 L120.5 78.24 Z"/>
+      <circle cx="61" cy="64.5" r="7"/>
+  </g>
+  <g fill="#fce27e" stroke="#fce27e" stroke-width="5" stroke-linejoin="round">
+      <path d="M61 62 L120.5 48.26 L120.5 75.74 Z"/>
+      <circle cx="61" cy="62" r="7"/>
+  </g>
+
+  <g stroke-width="3" stroke-linejoin="round">
+      <path fill="#b06f14" stroke="#b06f14" d="M88.5 58.62 L113.5 52.85 L113.5 71.15 L88.5 65.38 Z"/>
+      <path fill="#f5c93f" stroke="#f5c93f" d="M89.25 60.95 L112.75 55.53 L112.75 70.22 L89.25 64.8 Z"/>
+      <path fill="#e2a127" stroke="#e2a127" d="M89.25 60.95 L102.3 57.94 A41.5 41.5 0 0 1 102.1 67.76 L89.25 64.8 Z"/>
+  </g>
+  <circle cx="61" cy="62" r="4.5" fill="#8a5514"/>
+</svg>
