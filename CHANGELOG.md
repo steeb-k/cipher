@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file.
   "download favicon" option is on
 - "Download Website Icons" in the safe menu fetches icons for every entry
   that has a URL and none yet, a few sites at a time
+- Point project metadata, links and credits at Cipher's own repository. GNOME
+  Secrets and its authors are credited in the about dialog as the project
+  Cipher is based on
 
 ## 13.0.1 - 2026-05-26
 - Fix app version in meson.build

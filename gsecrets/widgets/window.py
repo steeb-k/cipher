@@ -588,8 +588,12 @@ class Window(Adw.ApplicationWindow):
             f"/org/gnome/World/Secrets/{const.APP_ID}.metainfo.xml",
             const.VERSION,
         )
+        about_dialog.set_developers(["steeb-k https://github.com/steeb-k"])
         about_dialog.set_designers(["Christopher Davis", "Tobias Bernard"])
-        about_dialog.set_developers(
+        # Cipher is a fork of GNOME Secrets. Its authors are credited as such
+        # rather than dropped: the code is theirs first.
+        about_dialog.add_credit_section(
+            _("GNOME Secrets, which Cipher is based on"),
             [
                 "Falk Alexander Seidl <fseidl@gnome.org>",
                 "Uta Lemke",
@@ -601,7 +605,9 @@ class Window(Adw.ApplicationWindow):
                 "Jan-Michael Brummer",
             ],
         )
-        about_dialog.set_copyright("© 2018-2024 Falk Alexander Seidl, et al.")
+        about_dialog.set_copyright(
+            "© 2026 steeb-k\n© 2018-2024 Falk Alexander Seidl, et al."
+        )
         # TRANSLATORS Add your name to the translator credits list
         about_dialog.set_translator_credits(_("translator-credits"))
         about_dialog.present(self)

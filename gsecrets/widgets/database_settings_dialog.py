@@ -189,7 +189,7 @@ class DatabaseSettingsDialog(Adw.PreferencesDialog):
             rows = []
 
             for entry in self.database_manager.db.find_entries():
-                pyhibp.set_user_agent(ua="Secrets")
+                pyhibp.set_user_agent(ua="Cipher")
                 if entry.password:
                     resp = pw.is_password_breached(password=entry.password)
                     if resp:
