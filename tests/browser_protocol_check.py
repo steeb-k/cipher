@@ -109,8 +109,12 @@ class FakeBackend:
         title: str,
         uuid: str | None = None,
         group_uuid: str | None = None,
+        download_favicon: bool = False,
     ) -> bool:
         """Write through pykeepass; the real backend goes via the UI model."""
+        # Accepted and ignored: fetching an icon is the real backend's business
+        # and needs the network, which these checks must never touch.
+        del download_favicon
         if uuid:
             for entry in self.db.entries:
                 if entry.uuid.hex == uuid:

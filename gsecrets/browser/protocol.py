@@ -26,11 +26,10 @@ from gsecrets.browser.errors import ProtocolError
 # Claiming a level we do not implement makes the extension attempt those
 # actions on real sites and get INCORRECT_ACTION back.
 #
-# 2.7.0 also advertises downloading a favicon after set-login, which is not
-# implemented. That is safe to claim: the feature flag only decides whether the
-# extension shows the option at all, the option itself defaults to off, and if it
-# is switched on the extra downloadFavicon field is simply ignored here, so the
-# entry is saved without an icon rather than failing.
+# 2.7.0 also advertises downloading a favicon after set-login. The extension
+# shows the option only when this level is claimed; when it is switched on,
+# set-login carries a downloadFavicon field and the backend fetches the site's
+# icon for the entry after replying, as KeePassXC does.
 PROTOCOL_VERSION = "2.7.0"  # generate-password
 
 
@@ -62,6 +61,7 @@ class Backend(Protocol):
         title: str,
         uuid: str | None = None,
         group_uuid: str | None = None,
+        download_favicon: bool = False,
     ) -> bool:
         """Create or update a login, returning True if one was created.
 
@@ -69,6 +69,10 @@ class Backend(Protocol):
         the application keeps a parallel model of the database that drives its
         UI. Writing entries behind that model's back leaves the visible list
         stale until the safe is reopened.
+
+        With download_favicon the backend also fetches the site's icon for the
+        entry, without holding up the reply: the extension is waiting on it,
+        and a slow site must not turn a saved password into a timeout.
         """
 
     async def create_group(self, path: str) -> tuple[str, str]:
@@ -412,6 +416,7 @@ class RequestHandler:
             title=matching.hostname(url) or url,
             uuid=uuid,
             group_uuid=group_uuid,
+            download_favicon=bool(payload.get("downloadFavicon")),
         )
         await self._backend.save()
 

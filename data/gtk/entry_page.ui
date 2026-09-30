@@ -198,6 +198,17 @@
             <child>
               <object class="AdwPreferencesGroup" id="icons_group">
                 <property name="title" translatable="yes">Icon</property>
+                <property name="header-suffix">
+                  <object class="GtkButton" id="download_icon_button">
+                    <property name="label" translatable="yes">Download Website Icon</property>
+                    <property name="tooltip-text" translatable="yes">Fetch the icon of the website in the URL field</property>
+                    <property name="action-name">entry.download_icon</property>
+                    <property name="valign">center</property>
+                    <style>
+                      <class name="flat"/>
+                    </style>
+                  </object>
+                </property>
                 <child>
                   <object class="GtkFlowBox" id="icon_entry_box">
                     <property name="selection-mode">single</property>

@@ -14,8 +14,9 @@ from gettext import gettext as _
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
-from gsecrets import config_manager, password_generator
-from gsecrets.safe_element import SafeGroup
+from gsecrets import config_manager, favicon, password_generator
+from gsecrets.browser.matching import hostname
+from gsecrets.safe_element import SafeEntry, SafeGroup
 from gsecrets.safe_watcher import SafeWatcher
 
 # Shortest gap between honouring two unlock requests, in microseconds to match
@@ -240,6 +241,7 @@ class ApplicationBackend:
         title: str,
         uuid: str | None = None,
         group_uuid: str | None = None,
+        download_favicon: bool = False,
     ) -> bool:
         """Create or update a login through the model the UI observes.
 
@@ -261,12 +263,42 @@ class ApplicationBackend:
 
             entry.props.username = login
             entry.props.password = password
-            return False
+            created = False
+        else:
+            group = self._find_group(database_manager, group_uuid)
+            entry = group.new_entry(title, login, password)
+            entry.props.url = url
+            created = True
 
-        group = self._find_group(database_manager, group_uuid)
-        entry = group.new_entry(title, login, password)
-        entry.props.url = url
-        return True
+        # Only for an entry that has no icon yet: a password update is not a
+        # reason to fetch the icon again, and never a reason to replace one the
+        # user chose. Scheduled, not awaited -- see Backend.set_login.
+        if download_favicon and entry.props.custom_icon is None:
+            asyncio.get_running_loop().create_task(self._download_icon(entry, url))
+
+        return created
+
+    async def _download_icon(self, entry: SafeEntry, url: str) -> None:
+        """Fetch the site's icon for an entry saved by the browser, then save."""
+        try:
+            data = await asyncio.to_thread(favicon.fetch, url)
+        except Exception:
+            logging.exception("Fetching an icon for %s failed", url)
+            return
+
+        if data is None:
+            return
+
+        # The safe may have been locked while the fetch ran. The model is
+        # still there, but writing to a locked safe is not something the user
+        # expects, and save() would refuse anyway.
+        database_manager = self._database_manager()
+        if database_manager is None:
+            logging.info("Safe locked before the icon for %s arrived", url)
+            return
+
+        entry.set_custom_icon(data, name=hostname(url))
+        await self.save()
 
     async def create_group(self, path: str) -> tuple[str, str]:
         """Create a group by name or slash-separated path.

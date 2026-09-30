@@ -26,3 +26,17 @@ test(
   args: files('browser_backend_check.py'),
   env: envs,
 )
+
+test(
+  'Test Custom Icons',
+  python_bin,
+  args: files('custom_icons_check.py'),
+  env: envs,
+)
+
+test(
+  'Test Favicon',
+  python_bin,
+  args: files('favicon_check.py'),
+  env: envs,
+)

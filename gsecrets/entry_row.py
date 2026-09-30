@@ -7,6 +7,7 @@ from gettext import gettext as _
 from gi.repository import Adw, GLib, GObject, Gtk
 
 from gsecrets.safe_element import EntryColor, SafeEntry
+from gsecrets.widgets.entry_page_icon import custom_icon_texture
 
 if typing.TYPE_CHECKING:
     from gsecrets.unlocked_database import UnlockedDatabase
@@ -34,11 +35,18 @@ class EntryRow(Adw.Bin):
         self._signals = GObject.SignalGroup.new(SafeEntry)
         self._bindings = GObject.BindingGroup.new()
 
-        self._bindings.bind(
-            "icon-name",
-            self._entry_icon,
-            "icon-name",
-            GObject.BindingFlags.SYNC_CREATE,
+        # The icon is not a plain binding: an entry with its own icon shows a
+        # texture, everything else a named symbolic icon, and either change
+        # has to redraw it.
+        self._signals.connect_closure(
+            "notify::icon-name",
+            self._on_entry_icon_changed,
+            False,
+        )
+        self._signals.connect_closure(
+            "notify::custom-icon",
+            self._on_entry_icon_changed,
+            False,
         )
         self._bindings.bind(
             "selected",
@@ -109,12 +117,27 @@ class EntryRow(Adw.Bin):
         self._bindings.props.source = element
 
         self._on_entry_name_changed(element, None)
+        self._on_entry_icon_changed(element, None)
         self._on_entry_username_changed(element, None)
         self._on_entry_password_changed(element, None)
         self._on_entry_opt_token_changed(element, None)
         self._on_entry_color_changed(element, None)
         self._on_entry_notify_expired(element, None)
         self._on_selection_mode_notify(self.unlocked_database, None)
+
+    def _on_entry_icon_changed(self, safe_entry, _gparam):
+        data = safe_entry.props.custom_icon
+        icon_uuid = safe_entry.custom_icon_uuid
+        if data is not None and icon_uuid is not None:
+            # A site's own icon is already a picture; the accent-coloured
+            # circle the symbolic icons sit in would only fight with it.
+            self._entry_icon.set_from_paintable(custom_icon_texture(icon_uuid, data))
+            self._entry_icon.props.pixel_size = 24
+            self._entry_icon.remove_css_class("colored")
+        else:
+            self._entry_icon.props.pixel_size = -1
+            self._entry_icon.props.icon_name = safe_entry.props.icon_name
+            self._entry_icon.add_css_class("colored")
 
     def _on_entry_notify_expired(self, safe_entry, _gparam):
         if safe_entry.expired and safe_entry.props.expires:

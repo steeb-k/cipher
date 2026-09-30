@@ -2,19 +2,27 @@
 from __future__ import annotations
 
 import logging
+import threading
 import typing
 from gettext import gettext as _
 
 import validators
 from gi.repository import Adw, GLib, GObject, Gtk
 
+from gsecrets import favicon
 from gsecrets.attachment_warning_dialog import AttachmentWarningDialog
+from gsecrets.browser.matching import hostname
 from gsecrets.color_widget import ColorEntryRow
 from gsecrets.safe_element import ICONS, SafeEntry
 from gsecrets.widgets.add_attribute_dialog import AddAttributeDialog
 from gsecrets.widgets.attachment_entry_row import AttachmentEntryRow
 from gsecrets.widgets.attribute_entry_row import AttributeEntryRow
-from gsecrets.widgets.entry_page_icon import EntryPageIcon
+from gsecrets.widgets.entry_page_icon import (
+    CUSTOM_ICON_NAME,
+    EntryPageCustomIcon,
+    EntryPageIcon,
+    custom_icon_texture,
+)
 from gsecrets.widgets.entry_page_tag import EntryPageTag
 from gsecrets.widgets.history_window import HistoryWindow
 from gsecrets.widgets.notes_dialog import NotesDialog
@@ -51,6 +59,7 @@ class EntryPage(Adw.Bin):
     color_property_bin = Gtk.Template.Child()
 
     icon_entry_box = Gtk.Template.Child()
+    download_icon_button = Gtk.Template.Child()
 
     _tags_group = Gtk.Template.Child()
     _tag_entry_box = Gtk.Template.Child()
@@ -73,6 +82,7 @@ class EntryPage(Adw.Bin):
     safe_entry = GObject.Property(type=SafeEntry)
 
     _tags: list[EntryPageTag] = []
+    _custom_icon_child: EntryPageCustomIcon | None = None
 
     def __init__(
         self,
@@ -87,6 +97,7 @@ class EntryPage(Adw.Bin):
         self.install_action("entry.copy_url", None, self._on_copy_action)
         self.install_action("entry.add_attribute", None, self._on_add_attribute)
         self.install_action("entry.add_attachment", None, self._on_add_attachment)
+        self.install_action("entry.download_icon", None, self._on_download_icon)
         self.install_action(
             "entry.password_history",
             None,
@@ -208,10 +219,16 @@ class EntryPage(Adw.Bin):
             if entry_icon == icon:
                 self.icon_entry_box.select_child(btn)
 
+        self._show_custom_icon(safe_entry)
+
         self.icon_entry_box.connect(
             "selected-children-changed",
             self.on_entry_icon_button_toggled,
         )
+
+        # Nothing to fetch from without a URL.
+        safe_entry.connect("notify::url", self._on_url_notify_for_icon)
+        self._on_url_notify_for_icon(safe_entry, None)
 
         # Tags
         self._update_tags()
@@ -396,7 +413,71 @@ class EntryPage(Adw.Bin):
         icon = selected_row.get_name()
 
         safe_entry = self.props.safe_entry
+        if icon == CUSTOM_ICON_NAME:
+            return
+
+        # Choosing a built-in icon while the entry has its own is how the
+        # user gets rid of the latter.
+        if self._custom_icon_child is not None:
+            safe_entry.clear_custom_icon()
+            self._show_custom_icon(safe_entry)
+
         safe_entry.props.icon = icon
+
+    def _show_custom_icon(self, safe_entry: SafeEntry) -> None:
+        """Make the picker match the entry: its own icon first, and selected."""
+        if self._custom_icon_child is not None:
+            self.icon_entry_box.remove(self._custom_icon_child)
+            self._custom_icon_child = None
+
+        data = safe_entry.props.custom_icon
+        icon_uuid = safe_entry.custom_icon_uuid
+        if data is None or icon_uuid is None:
+            return
+
+        child = EntryPageCustomIcon(custom_icon_texture(icon_uuid, data))
+        self.icon_entry_box.insert(child, 0)
+        self.icon_entry_box.select_child(child)
+        self._custom_icon_child = child
+
+    def _on_url_notify_for_icon(self, safe_entry, _pspec):
+        self.action_set_enabled("entry.download_icon", bool(safe_entry.props.url))
+
+    def _on_download_icon(self, _widget, _action_name, _pspec):
+        self.unlocked_database.start_database_lock_timer()
+        safe_entry = self.props.safe_entry
+        url = safe_entry.props.url
+        if not url:
+            return
+
+        # Off until the fetch answers, so one click means one fetch. Network
+        # work happens off the main thread, as the HIBP check does.
+        self.action_set_enabled("entry.download_icon", False)
+        thread = threading.Thread(
+            target=self._download_icon_task, args=(safe_entry, url), daemon=True
+        )
+        thread.start()
+
+    def _download_icon_task(self, safe_entry: SafeEntry, url: str) -> None:
+        data = favicon.fetch(url)
+        GLib.idle_add(self._on_icon_downloaded, safe_entry, url, data)
+
+    def _on_icon_downloaded(
+        self, safe_entry: SafeEntry, url: str, data: bytes | None
+    ) -> bool:
+        self.action_set_enabled("entry.download_icon", bool(safe_entry.props.url))
+
+        if data is None:
+            self.unlocked_database.window.send_notification(
+                _("No icon found for {host}").format(host=hostname(url) or url)
+            )
+            return GLib.SOURCE_REMOVE
+
+        safe_entry.set_custom_icon(data, name=hostname(url))
+        if safe_entry is self.props.safe_entry:
+            self._show_custom_icon(safe_entry)
+
+        return GLib.SOURCE_REMOVE
 
     def _on_launch(self, launcher, result, window):
         try:

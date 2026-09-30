@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+- Show the custom icons a database carries, as KeePassXC and KeePass store
+  them, instead of falling back to the built-in icon
+- Download a website's icon for an entry from the entry page, fetched from
+  the site itself and never from a third-party favicon service
+- Fetch the icon for logins the browser extension saves when its
+  "download favicon" option is on
+
 ## 13.0.1 - 2026-05-26
 - Fix app version in meson.build
 

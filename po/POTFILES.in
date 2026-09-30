@@ -57,6 +57,7 @@ gsecrets/widgets/attachment_entry_row.py
 gsecrets/widgets/attribute_entry_row.py
 gsecrets/widgets/credentials_group.py
 gsecrets/widgets/database_settings_dialog.py
+gsecrets/widgets/entry_page_icon.py
 gsecrets/widgets/expiration_date_row.py
 gsecrets/widgets/history_row.py
 gsecrets/widgets/notes_dialog.py

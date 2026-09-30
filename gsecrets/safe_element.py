@@ -13,6 +13,7 @@ from typing import NamedTuple
 from gi.repository import Gio, GLib, GObject, Gtk
 from pyotp import TOTP, parse_uri
 
+from gsecrets import custom_icons
 from gsecrets.attributes_model import AttributesModel
 
 if typing.TYPE_CHECKING:
@@ -628,6 +629,8 @@ class SafeEntry(SafeElement):
     _password: str | None = None
     _color: EntryColor | None = None
     _icon_nr: str | None = None
+    _custom_icon: bytes | None = None
+    _custom_icon_loaded = False
 
     history_saved = GObject.Signal()
 
@@ -932,6 +935,53 @@ class SafeEntry(SafeElement):
         :rtype: str
         """
         return self.props.icon.name
+
+    @GObject.Property(type=object, flags=GObject.ParamFlags.READABLE)
+    def custom_icon(self) -> bytes | None:
+        """The entry's own icon as PNG data, or None if it uses a built-in one.
+
+        A custom icon lives in the database's Meta section and the entry only
+        points at it, so the data is looked up once and kept: rows ask for it
+        on every rebind.
+        """
+        if not self._custom_icon_loaded:
+            icon_uuid = custom_icons.element_icon(self._element)
+            self._custom_icon = (
+                custom_icons.get_icon(self._db_manager.db, icon_uuid)
+                if icon_uuid is not None
+                else None
+            )
+            self._custom_icon_loaded = True
+
+        return self._custom_icon
+
+    @property
+    def custom_icon_uuid(self) -> UUID | None:
+        return custom_icons.element_icon(self._element)
+
+    def set_custom_icon(self, data: bytes, name: str | None = None) -> None:
+        """Give the entry its own icon, stored in the database.
+
+        The built-in icon number is kept underneath, so clearing the custom
+        icon later puts the entry back exactly as it was.
+        """
+        icon_uuid = custom_icons.add_icon(self._db_manager.db, data, name)
+        custom_icons.set_element_icon(self._element, icon_uuid)
+        self._custom_icon = data
+        self._custom_icon_loaded = True
+        self.notify("custom-icon")
+        self.updated()
+
+    def clear_custom_icon(self) -> None:
+        """Go back to the built-in icon. Harmless when there is none to clear."""
+        if custom_icons.element_icon(self._element) is None:
+            return
+
+        custom_icons.set_element_icon(self._element, None)
+        self._custom_icon = None
+        self._custom_icon_loaded = True
+        self.notify("custom-icon")
+        self.updated()
 
     @property
     def tags(self) -> dict:
