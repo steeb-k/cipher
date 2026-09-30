@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
   the site itself and never from a third-party favicon service
 - Fetch the icon for logins the browser extension saves when its
   "download favicon" option is on
+- "Download Website Icons" in the safe menu fetches icons for every entry
+  that has a URL and none yet, a few sites at a time
 
 ## 13.0.1 - 2026-05-26
 - Fix app version in meson.build

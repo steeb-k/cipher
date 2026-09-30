@@ -11,7 +11,9 @@ from pathlib import Path
 from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 import gsecrets.config_manager
-from gsecrets import const
+from gsecrets import const, favicon
+from gsecrets.browser.matching import hostname
+from gsecrets.icon_download import BulkIconDownload
 from gsecrets.entry_page import EntryPage
 from gsecrets.entry_row import EntryRow
 from gsecrets.group_page import GroupPage
@@ -58,6 +60,9 @@ class UnlockedDatabase(Adw.BreakpointBin):
     # pylint: disable=too-many-instance-attributes
     # pylint: disable=too-many-public-methods
     __gtype_name__ = "UnlockedDatabase"
+
+    # The bulk website-icon fetch in progress, if any. See download_website_icons().
+    _icon_download: BulkIconDownload | None = None
 
     # Connection handlers
     db_locked_handler: int | None = None
@@ -507,6 +512,68 @@ class UnlockedDatabase(Adw.BreakpointBin):
                 file_path = Path(root) / file_name
                 gfile = Gio.File.new_for_path(str(file_path))
                 gfile.delete_async(GLib.PRIORITY_DEFAULT, None, callback)
+
+    def download_website_icons(self) -> None:
+        """Fetch an icon for every entry that has a URL and no icon yet.
+
+        Entries that already have one are left alone, whether it came from an
+        earlier run or was chosen by hand: this fills gaps, it does not
+        replace. Results land as they arrive, and the safe is saved once at
+        the end.
+        """
+        if self._icon_download is not None and self._icon_download.running:
+            self.window.send_notification(_("Website icons are already being downloaded"))
+            return
+
+        entries = self.database_manager.entries
+        jobs = [
+            (entry, entry.props.url)
+            for entry in (entries.get_item(i) for i in range(entries.get_n_items()))
+            if entry.props.url and entry.props.custom_icon is None
+        ]
+        if not jobs:
+            self.window.send_notification(_("Every entry with a URL already has an icon"))
+            return
+
+        self.window.send_notification(
+            ngettext(
+                "Downloading the icon for {count} entry…",
+                "Downloading icons for {count} entries…",
+                len(jobs),
+            ).format(count=len(jobs))
+        )
+
+        self._icon_download = BulkIconDownload(
+            favicon.fetch, self._on_website_icon, self._on_website_icons_done
+        )
+        self._icon_download.start(jobs)
+
+    def _on_website_icon(self, entry: SafeEntry, data: bytes | None) -> None:
+        # The safe can lock while a run is in progress. The model is still
+        # here, but nothing should be written to a locked safe.
+        if data is None or self.props.database_locked:
+            return
+
+        entry.set_custom_icon(data, name=hostname(entry.props.url))
+
+    def _on_website_icons_done(self, found: int, missing: int) -> None:
+        self._icon_download = None
+        if self.props.database_locked:
+            return
+
+        if found:
+            message = ngettext(
+                "Downloaded {found} icon", "Downloaded {found} icons", found
+            ).format(found=found)
+            if missing:
+                message += " " + ngettext(
+                    "({missing} site had none)", "({missing} sites had none)", missing
+                ).format(missing=missing)
+            self.auto_save_database()
+        else:
+            message = _("No icons found")
+
+        self.window.send_notification(message)
 
     def save_database(self) -> None:
         """Save the database.

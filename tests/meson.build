@@ -40,3 +40,10 @@ test(
   args: files('favicon_check.py'),
   env: envs,
 )
+
+test(
+  'Test Icon Download',
+  python_bin,
+  args: files('icon_download_check.py'),
+  env: envs,
+)

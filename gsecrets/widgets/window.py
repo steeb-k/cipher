@@ -514,6 +514,7 @@ class Window(Adw.ApplicationWindow):
             "db.add_entry",
             "db.add_group",
             "db.settings",
+            "db.download_icons",
             "db.undo_delete",
             "db.undo_attribute_delete",
             "element.delete",
@@ -559,6 +560,8 @@ class Window(Adw.ApplicationWindow):
             action_db.show_properties_dialog()
         elif name == "db.settings":
             action_db.show_database_settings()
+        elif name == "db.download_icons":
+            action_db.download_website_icons()
         elif name == "db.selection":
             action_db.selection_mode_headerbar.on_selection_action(param)
         elif name == "db.undo_delete":

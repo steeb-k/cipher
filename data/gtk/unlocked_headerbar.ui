@@ -88,6 +88,10 @@
         <attribute name='label' translatable='yes'>Sa_fe Settings</attribute>
         <attribute name='action'>win.db.settings</attribute>
       </item>
+      <item>
+        <attribute name='label' translatable='yes'>Download _Website Icons</attribute>
+        <attribute name='action'>win.db.download_icons</attribute>
+      </item>
     </section>
     <section>
       <item>
