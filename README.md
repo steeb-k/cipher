@@ -37,9 +37,21 @@ see [Origins](#origins) below.
 * AES-KDF KDBX 3.1
 
 ## Installing
-Cipher is packaged as a Flatpak. To build and install it from this checkout
-you need [flatpak-builder](https://flathub.org/apps/org.flatpak.Builder) and
-the GNOME 50 SDK:
+Cipher is distributed as a Flatpak from [apps.kznjk.com](https://apps.kznjk.com):
+
+```
+flatpak remote-add --if-not-exists kznjk https://apps.kznjk.com/kznjk.flatpakrepo
+flatpak install kznjk io.github.steeb_k.Cipher
+```
+
+Each tagged release is built by [CI](.github/workflows/ci.yml) and published
+there by [kznjk-flatpak](https://github.com/steeb-k/kznjk-flatpak), which is
+the only thing that signs it. The release also carries an unsigned
+`.flatpak` bundle for a one-off install.
+
+To build and install from this checkout instead, you need
+[flatpak-builder](https://flathub.org/apps/org.flatpak.Builder) and the
+GNOME 50 SDK:
 
 ```
 flatpak install --user flathub org.gnome.Sdk//50 org.gnome.Platform//50

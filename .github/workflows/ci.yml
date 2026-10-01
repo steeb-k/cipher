@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [secrets-browser]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  attribution:
+    name: No AI attribution
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # From the commit the fork started at: the inherited GNOME Secrets history
+      # has a contributor named Claude Paroz, who is not what this is about.
+      - name: Check every commit made in this fork
+        run: tools/check-commit-messages --since 590d51d4e4e03c70c87fe43034df551c19afdf4c
+
+      - name: Check the pull request
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n%s\n' "$TITLE" "$BODY" | tools/check-commit-messages -
+
+  flatpak:
+    name: Flatpak
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: flatpak/io.github.steeb_k.Cipher.json
+          bundle: io.github.steeb_k.Cipher.flatpak
+          branch: stable
+
+      - name: Pack the build repo
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: tar -C repo -cf flatpak-build.tar .
+
+      - uses: actions/upload-artifact@v7
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: flatpak-build
+          path: flatpak-build.tar
+          retention-days: 7
+
+  release:
+    name: Attach the build to the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [attribution, flatpak]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag matches the project version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(sed -n "s/^ *version: '\(.*\)',$/\1/p" meson.build | head -n1)
+          if [ "$TAG" != "v$version" ]; then
+            echo "Tag $TAG does not match meson.build version $version." >&2
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # steeb-k/kznjk-flatpak picks the build up from here, signs it and
+      # publishes it to apps.kznjk.com.
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          sha=$(sha256sum artifacts/flatpak-build.tar | cut -d' ' -f1)
+          printf '{"app_id": "io.github.steeb_k.Cipher", "branch": "stable", "tar_sha256": "%s"}\n' "$sha" \
+            > flatpak-build.json
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "Cipher ${TAG#v}" --notes ""
+          fi
+          gh release upload "$TAG" --clobber artifacts/flatpak-build.tar \
+            artifacts/io.github.steeb_k.Cipher.flatpak
+          # The json goes last: the publisher waits for it, so it never takes
+          # a build whose tarball is still uploading.
+          gh release upload "$TAG" --clobber flatpak-build.json

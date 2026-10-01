@@ -14,6 +14,9 @@ All notable changes to this project will be documented in this file.
 - Point project metadata, links and credits at Cipher's own repository. GNOME
   Secrets and its authors are credited in the about dialog as the project
   Cipher is based on
+- Build each tagged release as a Flatpak on GitHub and attach it to the
+  release, where kznjk-flatpak picks it up and publishes it to apps.kznjk.com.
+  Secrets' GitLab CI configuration, which GitHub never ran, is removed
 
 ## 13.0.1 - 2026-05-26
 - Fix app version in meson.build

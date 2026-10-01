@@ -1,0 +1,52 @@
+#!/bin/sh
+#
+# Fail if a commit carries AI attribution: a Co-authored-by trailer, a
+# "Generated with" footer, or any mention of Claude or Anthropic in the
+# message or the author and committer identities.
+#
+#   tools/check-commit-messages --all        # every commit on every ref
+#   tools/check-commit-messages --since REV  # every commit not reachable from REV
+#   tools/check-commit-messages FILE         # one message (the commit-msg hook)
+#   tools/check-commit-messages -            # text on stdin (PR title and body)
+#
+# --since exists because Cipher keeps GNOME Secrets' history, and that history
+# has a contributor whose given name is Claude. The check is about this fork's
+# own commits, so CI runs it from the commit the fork started at.
+#
+set -eu
+
+PATTERN='claude|anthropic|co-authored-by:|generated with'
+
+case "${1:-}" in
+--all|--since)
+    if [ "$1" = --since ]; then
+        [ -n "${2:-}" ] || { echo "usage: $0 --since REV" >&2; exit 2; }
+        range="--not $2"
+        count=$(git rev-list --all --not "$2" | wc -l)
+    else
+        range=""
+        count=$(git rev-list --all | wc -l)
+    fi
+    # shellcheck disable=SC2086
+    git log --all $range --format='@commit %H%n%an <%ae>%n%cn <%ce>%n%B' |
+        awk -v pattern="$PATTERN" '
+            /^@commit / { commit = $2; next }
+            tolower($0) ~ pattern { print commit ": " $0; bad = 1 }
+            END { exit bad }
+        ' || {
+        echo "AI attribution found in the commits above." >&2
+        exit 1
+    }
+    echo "Checked $count commits: no AI attribution."
+    ;;
+'')
+    echo "usage: $0 --all | FILE | -" >&2
+    exit 2
+    ;;
+*)
+    if grep -v '^#' "$1" | grep -n -i -E "$PATTERN" >&2; then
+        echo "AI attribution found in the lines above." >&2
+        exit 1
+    fi
+    ;;
+esac
